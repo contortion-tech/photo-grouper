@@ -1,0 +1,41 @@
+{
+  "name": "photo-grouper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "npm run prepare:compression-worker",
+    "dev": "next dev",
+    "build": "npm run prepare:compression-worker && next build --webpack && npm run verify:pwa",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "tsx scripts/photo-edits.test.mjs && tsx scripts/product-features.test.mjs && tsx scripts/gallery.test.mjs && tsx scripts/layout-geometry.test.mjs && tsx scripts/bundles.test.mjs",
+    "prepare:compression-worker": "node scripts/prepare-compression-worker.mjs",
+    "verify:pwa": "node scripts/verify-pwa.mjs"
+  },
+  "dependencies": {
+    "@ducanh2912/next-pwa": "10.2.9",
+    "@tanstack/react-virtual": "3.14.21",
+    "@vercel/analytics": "2.0.1",
+    "browser-image-compression": "2.0.2",
+    "fflate": "0.8.3",
+    "lucide-react": "0.561.0",
+    "next": "16.2.11",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "yet-another-react-lightbox": "3.32.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "tsx": "4.23.1",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "serialize-javascript": "7.0.7"
+  }
+}

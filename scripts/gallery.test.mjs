@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import { DEFAULT_GALLERY_SETTINGS, readGallerySettings, gridGeometry, toggleSelection, ThumbnailPool, isImageFile, appendGalleryAssets, moveBefore, replaceVisibleOrder, sampleColours, suggestColourOrder } from '../utils/gallery.ts';
+
+assert.deepEqual(readGallerySettings(null), DEFAULT_GALLERY_SETTINGS);
+assert.deepEqual(readGallerySettings({ size: 900, gap: -2, shape: 'other', fit: 'other', labels: 'yes' }), { ...DEFAULT_GALLERY_SETTINGS, size: 320, gap: 0 });
+assert.equal(readGallerySettings({ size: NaN, gap: Infinity }).size, 160);
+assert.equal(gridGeometry(1000, DEFAULT_GALLERY_SETTINGS).columns, 6);
+assert.equal(gridGeometry(30, DEFAULT_GALLERY_SETTINGS).columns, 1);
+for (const shape of ['landscape', 'square', 'portrait']) {
+  const { cellWidth, cellHeight, columns } = gridGeometry(1000, { ...DEFAULT_GALLERY_SETTINGS, gap: 0, shape });
+  assert.ok(Math.abs(cellWidth * columns - 1000) < .01);
+  assert.ok(Math.abs(cellWidth / cellHeight - (shape === 'landscape' ? 4/3 : shape === 'portrait' ? 3/4 : 1)) < .01);
+}
+const ids = ['a', 'b', 'c', 'd', 'e'];
+assert.deepEqual(toggleSelection(['a'], ids, 'd', 'a', true, 3), ['a', 'b', 'c']);
+assert.deepEqual(toggleSelection(['b'], ids, 'b', null, false, 9), []);
+assert.deepEqual(toggleSelection(['a', 'b'], ids, 'e', null, false, 2), ['a', 'b']);
+assert.deepEqual(toggleSelection(['a'], ['e'], 'e', 'a', true, 9), ['a', 'e']);
+assert.equal(isImageFile({ name: 'a.JPG', type: '' }), true);
+assert.equal(isImageFile({ name: 'notes.txt', type: 'text/plain' }), false);
+const one = new File(['a'], 'photo.png', { lastModified: 100 });
+const different = new File(['b'], 'photo.png', { lastModified: 100 });
+let nextId = 0;
+assert.equal(appendGalleryAssets([], [one, different], () => String(nextId++)).length, 2, 'matching metadata does not suppress different files');
+assert.equal(appendGalleryAssets([], [one, one], () => String(nextId++)).length, 1, 'the same File reference is added once');
+let active = 0, peak = 0, decodes = 0;
+const pool = new ThumbnailPool(() => {}, 2, async () => {
+  decodes++; active++; peak = Math.max(peak, active);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  active--;
+  return { width: 1200, height: 800, blob: new Blob(['thumbnail']) };
+});
+const asset = (id) => ({ id, path: `${id}.png`, folder: '', file: new File(['a'], `${id}.png`) });
+const first = pool.request(asset('a'));
+assert.equal(pool.request(asset('a')), first, 'concurrent requests share the decode');
+await Promise.all([first, ...['b', 'c', 'd', 'e'].map((id) => pool.request(asset(id)))]);
+assert.equal(peak, 2, 'decoding concurrency is bounded');
+assert.equal(decodes, 5);
+assert.equal(pool.cacheSize, 2, 'thumbnail cache obeys its capacity');
+assert.equal(pool.metadata.size, 5, 'metadata survives thumbnail eviction');
+await pool.request(asset('e'));
+assert.equal(decodes, 5, 'cached thumbnails do not decode again');
+await pool.request(asset('a'));
+assert.equal(decodes, 6, 'evicted thumbnail is regenerated');
+pool.dispose();
+assert.equal(pool.cacheSize, 0);
+const broken = new ThumbnailPool(() => {}, 2, async () => { throw new Error('bad file'); });
+await assert.rejects(broken.request(asset('bad')));
+assert.ok(broken.metadata.get('bad').error);
+console.log('gallery selection, settings, geometry, cache and concurrency tests passed');
+
+assert.deepEqual(moveBefore(['a','b','c'], 'c', 'a'), ['c','a','b']);
+assert.deepEqual(moveBefore(['a','b','c'], 'a', 'c'), ['b','a','c']);
+assert.deepEqual(moveBefore(['a','b'], 'missing', 'a'), ['a','b']);
+assert.deepEqual(replaceVisibleOrder(['hidden','a','hidden2','b'], ['b','a']), ['hidden','b','hidden2','a']);
+const pixels = new Uint8ClampedArray(20*20*4);
+for (let y=0; y<20; y++) for (let x=0; x<20; x++) { const i=(y*20+x)*4; pixels[i]=x<4||x>16||y<4||y>16 ? 255 : 0; pixels[i+2]=pixels[i] ? 0 : 255; pixels[i+3]=255; }
+const palette = sampleColours(pixels,20,20);
+assert.ok(palette.edgeColour[0] > palette.edgeColour[2]);
+assert.ok(palette.centreColour[2] > palette.centreColour[0]);
+const colours = new Map([['red',{edgeColour:[255,0,0]}],['blue',{edgeColour:[0,0,255]}]]);
+assert.deepEqual(suggestColourOrder(['blue','missing','red'], colours, 'edgeColour'), ['red','blue','missing']);
+assert.deepEqual(suggestColourOrder(['red','red2'], new Map([...colours,['red2',{edgeColour:[255,0,0]}]]), 'edgeColour'), ['red','red2']);
+console.log('manual ordering and local colour suggestion tests passed');

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="PhotoGrouper">
+  <title>PhotoGrouper</title>
+  <defs>
+    <linearGradient id="pg-indigo-dark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818CF8"></stop>
+      <stop offset="1" stop-color="#6366F1"></stop>
+    </linearGradient>
+  </defs>
+  
+  <rect x="34" y="34" width="60" height="60" rx="12" fill="url(#pg-indigo-dark)"></rect>
+  <rect x="34" y="106" width="60" height="60" rx="12" fill="#C4B5FD"></rect>
+  <rect x="106" y="106" width="60" height="60" rx="12" fill="#E0E7FF"></rect>
+  <g transform="translate(136 60) rotate(8) translate(-30 -30)">
+    <rect width="60" height="60" rx="12" fill="#A78BFA"></rect>
+    <circle cx="20" cy="20" r="5" fill="#ffffff" opacity="0.85"></circle>
+  </g>
+</svg>
