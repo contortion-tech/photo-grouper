@@ -241,7 +241,7 @@ segments for pointer and keyboard resize. The parent updates template geometry d
 photo assignments and edits survive resizing, and the same geometry reaches canvas export.
 Selecting a different preset retains the existing reset behavior.
 
-### Named post bundles
+### Named post bundles (manifest v2)
 
 `PhotoSelection` owns separate collage/bundle selections, mode, saved-bundle navigation and the
 current bundle draft. `BundleEditor` owns presentation, operation feedback and crop interaction;
@@ -249,9 +249,20 @@ its draft is controlled by the gallery. `utils/bundles.ts` owns validation, shar
 JPEG rendering, IndexedDB transactions and versioned ZIP export/restore. Collage template state
 and its 2–9-photo limits remain independent.
 
+A bundle is a shortlist organised into pages: `BundlePage { id, items, ratio, width, background }`
+with at most `MAX_PAGES = 20` pages of at most `MAX_PAGE_ITEMS = 9` items (cover is page 1, item 1
+— the `#01 · COVER` slot). The `BundleManifest` is `version: 2`; validation caps total sources at
+`MAX_TOTAL` (20 × 25 MiB = 500 MiB), images at 25 MiB each and videos at 500 MiB each
+(`.mp4`/`.mov`/`.webm`/`.m4v`; thumbnails are generated offscreen at 25% duration). V1 drafts
+auto-migrate on load by chunking the flat item list into pages, and v1 ZIP archives restore
+through the same path. Adding media happens in the gallery importer only — `BundleEditor` edits
+the existing pages and projects page 1 into its single-page controls (write-through); there is no
+add-page affordance because an empty page is invalid.
+
 Persistence is additive: IndexedDB database `photo-grouper-bundles-v1`, store `bundles`. Only an
 explicit successful Save marks a draft saved; quota/transaction failures retain in-memory state.
 Original File payloads, order, nickname and per-image crop settings are saved atomically together.
 Portable backups contain originals and a checked manifest, with optional posting copies and a
 separate contact sheet. Restores create a new bundle identity rather than overwriting old drafts.
-Canvas posting export and previews use the same crop placement helper.
+Canvas posting export and previews use the same crop placement helper. The gallery's
+`ThumbnailPool` is an LRU cache (128 entries) so browsing large libraries stays lazy and bounded.

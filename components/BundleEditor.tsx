@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { ArrowLeft, ArrowRight, Check, Download, GripVertical, RotateCcw, Save, X } from 'lucide-react';
 import {
   BUNDLE_RATIOS, DEFAULT_BUNDLE_CROP, exportBundle, postingPlacement, saveBundle,
-  type BundleCrop, type BundleDraft, type BundleItem, type BundleRatio,
+  type BundleCrop, type BundleDraft, type BundleItem, type BundlePage, type BundleRatio,
 } from '@/utils/bundles';
 
 interface Props {
@@ -15,6 +15,8 @@ interface Props {
   onSaved: () => void;
   initiallySaved?: boolean;
 }
+
+const isVideoFile = (file: { name: string; type?: string }) => file.type?.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
 
 function useFileUrl(file: File) {
   const [source, setSource] = useState<{ file: File; url: string } | null>(null);
@@ -28,7 +30,17 @@ function useFileUrl(file: File) {
 
 function BundleThumbnail({ item }: { item: BundleItem }) {
   const url = useFileUrl(item.file);
-  return url ? <Image unoptimized fill sizes="100px" src={url} alt={item.file.name} className="object-cover" draggable={false} /> : null;
+  const isVideo = isVideoFile(item.file);
+  if (!url) return null;
+  if (isVideo) {
+    return (
+      <div className="relative h-full w-full bg-slate-900 flex items-center justify-center overflow-hidden">
+        <video src={url} preload="metadata" muted playsInline className="h-full w-full object-cover pointer-events-none" />
+        <span className="absolute top-1 right-1 rounded bg-black/80 px-1 py-0.5 text-[9px] font-bold tracking-wide text-amber-300">▶ VIDEO</span>
+      </div>
+    );
+  }
+  return <Image unoptimized fill sizes="100px" src={url} alt={item.file.name} className="object-cover" draggable={false} />;
 }
 
 function CropPreview({ item, ratio, background, onCrop, disabled }: {
@@ -36,6 +48,7 @@ function CropPreview({ item, ratio, background, onCrop, disabled }: {
   onCrop: (crop: Partial<BundleCrop>) => void; disabled: boolean;
 }) {
   const url = useFileUrl(item.file);
+  const isVideo = isVideoFile(item.file);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [containerSize, setContainerSize] = useState({ width: 400, height: 400 });
   const [loadError, setLoadError] = useState(false);
@@ -52,7 +65,7 @@ function CropPreview({ item, ratio, background, onCrop, disabled }: {
   const crop = ratio === null ? DEFAULT_BUNDLE_CROP : item.crop;
   const placement = imageSize.width ? postingPlacement(imageSize.width, imageSize.height, containerSize.width, containerSize.height, crop) : null;
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (disabled || ratio === null || crop.fit !== 'cover' || !placement) return;
+    if (disabled || isVideo || ratio === null || crop.fit !== 'cover' || !placement) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { x: event.clientX, y: event.clientY, crop, overflowX: Math.max(0, placement.width - containerSize.width), overflowY: Math.max(0, placement.height - containerSize.height) };
     event.preventDefault();
@@ -67,9 +80,13 @@ function CropPreview({ item, ratio, background, onCrop, disabled }: {
     });
   };
   return <div className="flex w-full justify-center">
-    <div ref={frame} className={`relative w-full max-w-md overflow-hidden rounded border border-slate-600 ${ratio !== null && crop.fit === 'cover' ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ aspectRatio: aspect, background, touchAction: ratio !== null && crop.fit === 'cover' ? 'none' : 'auto' }} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} aria-label="Posting image crop preview">
-      {url && <Image unoptimized src={url} width={imageSize.width || 1000} height={imageSize.height || 1000} alt={item.file.name} draggable={false} onLoad={(event) => { const image = event.currentTarget; setImageSize({ width: image.naturalWidth, height: image.naturalHeight }); setLoadError(false); }} onError={() => setLoadError(true)} style={placement ? { position: 'absolute', left: placement.x, top: placement.y, width: placement.width, height: placement.height, maxWidth: 'none' } : { width: '100%', height: '100%', objectFit: 'contain' }} />}
-      {loadError && <p role="alert" className="absolute inset-0 grid place-items-center bg-slate-900 p-4 text-center text-sm">This image cannot be previewed. Choose a browser-supported source before exporting.</p>}
+    <div ref={frame} className={`relative w-full max-w-md overflow-hidden rounded border border-slate-600 ${!isVideo && ratio !== null && crop.fit === 'cover' ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ aspectRatio: aspect, background, touchAction: !isVideo && ratio !== null && crop.fit === 'cover' ? 'none' : 'auto' }} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} aria-label="Posting image crop preview">
+      {url && (isVideo ? (
+        <video src={url} controls playsInline className="h-full w-full object-contain" />
+      ) : (
+        <Image unoptimized src={url} width={imageSize.width || 1000} height={imageSize.height || 1000} alt={item.file.name} draggable={false} onLoad={(event) => { const image = event.currentTarget; setImageSize({ width: image.naturalWidth, height: image.naturalHeight }); setLoadError(false); }} onError={() => setLoadError(true)} style={placement ? { position: 'absolute', left: placement.x, top: placement.y, width: placement.width, height: placement.height, maxWidth: 'none' } : { width: '100%', height: '100%', objectFit: 'contain' }} />
+      ))}
+      {loadError && <p role="alert" className="absolute inset-0 grid place-items-center bg-slate-900 p-4 text-center text-sm">This media cannot be previewed. Choose a browser-supported source before exporting.</p>}
     </div>
   </div>;
 }
@@ -77,7 +94,10 @@ function CropPreview({ item, ratio, background, onCrop, disabled }: {
 const controlClass = 'min-h-10 rounded border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 disabled:opacity-40';
 
 export default function BundleEditor({ draft, onChange, onBack, onSaved, initiallySaved = false }: Props) {
-  const [activeId, setActiveId] = useState(draft.items[0]?.id);
+  const pages = draft.pages ?? [{ id: draft.id, items: draft.items, ratio: draft.ratio, width: draft.width, background: draft.background }];
+  const [pageIndex, setPageIndex] = useState(pages[0].id);
+  const activePage = pages.find((page) => page.id === pageIndex) ?? pages[0];
+  const [activeId, setActiveId] = useState(activePage.items[0]?.id);
   const [savedDraft, setSavedDraft] = useState<BundleDraft | null>(initiallySaved ? draft : null);
   const [includePosting, setIncludePosting] = useState(false);
   const [busy, setBusy] = useState<'save' | 'export' | null>(null);
@@ -85,33 +105,52 @@ export default function BundleEditor({ draft, onChange, onBack, onSaved, initial
   const [error, setError] = useState('');
   const dragging = useRef<string | null>(null);
   const strip = useRef<HTMLDivElement>(null);
-  const current = draft.items.find((item) => item.id === activeId) ?? draft.items[0];
-  const selectedIndex = draft.items.findIndex((item) => item.id === current?.id);
-  const preset = BUNDLE_RATIOS.find((candidate) => candidate.id === draft.ratio) ?? BUNDLE_RATIOS[0];
+  const current = activePage.items.find((item) => item.id === activeId) ?? activePage.items[0];
+  const selectedIndex = activePage.items.findIndex((item) => item.id === current?.id);
+  const preset = BUNDLE_RATIOS.find((candidate) => candidate.id === activePage.ratio) ?? BUNDLE_RATIOS[0];
   const isSaved = savedDraft === draft;
   const validName = draft.name.trim().length > 0 && draft.name.trim().length <= 80;
   const update = (patch: Partial<BundleDraft>) => {
     onChange({ ...draft, ...patch, updatedAt: Date.now() });
     setMessage('');
   };
+  const updatePages = (next: BundlePage[]) => {
+    // Pages are the source of truth; the legacy top-level fields mirror page 1
+    // so save/export and non-page-aware callers stay consistent.
+    const first = next[0];
+    onChange({ ...draft, version: 2, pages: next, items: first.items, ratio: first.ratio, width: first.width, background: first.background, updatedAt: Date.now() });
+    setMessage('');
+  };
+  const updatePage = (id: string, patch: Partial<BundlePage>) => updatePages(pages.map((page) => page.id === id ? { ...page, ...patch } : page));
   const updateCrop = (patch: Partial<BundleCrop>) => {
     if (!current || busy) return;
-    update({ items: draft.items.map((item) => item.id === current.id ? { ...item, crop: { ...item.crop, ...patch } } : item) });
+    updatePage(activePage.id, { items: activePage.items.map((item) => item.id === current.id ? { ...item, crop: { ...item.crop, ...patch } } : item) });
   };
   const reorder = (source: string, target: string) => {
     if (busy || source === target) return;
-    const sourceItem = draft.items.find((item) => item.id === source);
-    if (!sourceItem || !draft.items.some((item) => item.id === target)) return;
-    const items = draft.items.filter((item) => item.id !== source);
+    const sourceItem = activePage.items.find((item) => item.id === source);
+    if (!sourceItem || !activePage.items.some((item) => item.id === target)) return;
+    const items = activePage.items.filter((item) => item.id !== source);
     items.splice(items.findIndex((item) => item.id === target), 0, sourceItem);
-    update({ items });
+    updatePage(activePage.id, { items });
   };
   const move = (id: string, delta: number) => {
-    const index = draft.items.findIndex((item) => item.id === id);
-    const other = draft.items[index + delta];
+    const index = activePage.items.findIndex((item) => item.id === id);
+    const other = activePage.items[index + delta];
     if (!other || busy) return;
     if (delta < 0) reorder(id, other.id); else reorder(other.id, id);
     requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>(`[data-bundle-grip="${id}"]`)?.focus());
+  };
+  const removeItem = (id: string) => {
+    if (busy) return;
+    const items = activePage.items.filter((item) => item.id !== id);
+    if (items.length) updatePage(activePage.id, { items });
+  };
+  const removePage = (id: string) => {
+    if (busy || pages.length <= 1) return;
+    const next = pages.filter((page) => page.id !== id);
+    updatePages(next);
+    setPageIndex(next[0].id);
   };
   const save = async () => {
     if (!validName || busy) return;
@@ -145,10 +184,11 @@ export default function BundleEditor({ draft, onChange, onBack, onSaved, initial
     } finally { setBusy(null); }
   };
   if (!current) return null;
+  const isCurrentVideo = isVideoFile(current.file);
   return <main className="flex min-h-dvh flex-col bg-slate-950 text-slate-100">
     <header className="flex flex-wrap items-center gap-3 border-b border-slate-700 px-4 py-3">
       <button type="button" onClick={onBack} disabled={!!busy} className={controlClass}><ArrowLeft className="mr-1 inline h-4 w-4" /> Photos</button>
-      <div className="flex-1"><h1 className="text-base font-semibold">Post bundle</h1><p className="text-xs text-slate-400">{draft.items.length}/20 images · <span role="status">{isSaved ? 'Saved locally' : 'Unsaved changes'}</span></p></div>
+      <div className="flex-1"><h1 className="text-base font-semibold">Post bundle</h1><p className="text-xs text-slate-400">{pages.length} page{pages.length === 1 ? '' : 's'} · {pages.reduce((sum, page) => sum + page.items.length, 0)} images{pages.length > 1 ? ` · ${activePage.items.length} on this page` : ''} · <span role="status">{isSaved ? 'Saved locally' : 'Unsaved changes'}</span></p></div>
       <button type="button" onClick={() => void save()} disabled={!!busy || !validName} className={controlClass}><Save className="mr-1 inline h-4 w-4" />{busy === 'save' ? 'Saving…' : 'Save draft'}</button>
       <button type="button" onClick={() => void download()} disabled={!!busy || !validName} className={`${controlClass} border-blue-400 bg-blue-500 font-medium text-white`}><Download className="mr-1 inline h-4 w-4" />{busy === 'export' ? 'Preparing ZIP…' : 'Download ZIP'}</button>
     </header>
@@ -156,37 +196,96 @@ export default function BundleEditor({ draft, onChange, onBack, onSaved, initial
     <fieldset disabled={!!busy} className="min-w-0 border-0 p-4">
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-slate-300">Bundle nickname<input aria-label="Bundle nickname" maxLength={80} value={draft.name} onChange={(event) => update({ name: event.target.value })} className={controlClass} /></label>
-        <label className="flex flex-col gap-1 text-xs text-slate-300">Gallery ratio<select aria-label="Gallery ratio" value={draft.ratio} onChange={(event) => update({ ratio: event.target.value as BundleRatio })} className={controlClass}>{BUNDLE_RATIOS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-        <label className="flex flex-col gap-1 text-xs text-slate-300">Posting copy width<select aria-label="Posting copy width" value={draft.width} disabled={draft.ratio === 'original'} onChange={(event) => update({ width: Number(event.target.value) as 1080 | 2160 })} className={controlClass}><option value={1080}>1080 px</option><option value={2160}>2160 px · HQ</option></select></label>
+        <div className="flex items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs text-slate-300">Page<select aria-label="Active bundle page" value={activePage.id} onChange={(event) => setPageIndex(event.target.value)} className={controlClass}>{pages.map((page, index) => <option key={page.id} value={page.id}>Page {index + 1} · {page.items.length}</option>)}</select></label>
+          {pages.length > 1 && <button type="button" onClick={() => removePage(activePage.id)} className={controlClass} title="Remove this page">Remove page</button>}
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1 text-xs text-slate-300">Gallery ratio<select aria-label="Gallery ratio" value={activePage.ratio} onChange={(event) => updatePage(activePage.id, { ratio: event.target.value as BundleRatio })} className={controlClass}>{BUNDLE_RATIOS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+        <label className="flex flex-col gap-1 text-xs text-slate-300">Posting copy width<select aria-label="Posting copy width" value={activePage.width} disabled={activePage.ratio === 'original'} onChange={(event) => updatePage(activePage.id, { width: Number(event.target.value) as 1080 | 2160 })} className={controlClass}><option value={1080}>1080 px</option><option value={2160}>2160 px · HQ</option></select></label>
       </div>
       {!validName && <p className="mt-2 text-xs text-amber-200">Give this bundle a nickname before saving or exporting.</p>}
-      <div className="mt-4 flex items-center justify-between gap-3"><h2 className="text-sm font-medium">Posting order</h2><p className="text-xs text-slate-400">Drag a grip or focus it and use ← →. First image is the cover.</p></div>
+      <div className="mt-4 flex items-center justify-between gap-3"><h2 className="text-sm font-medium">Posting order · page {pages.findIndex((page) => page.id === activePage.id) + 1}</h2><p className="text-xs text-slate-400">Drag a grip or focus it and use ← →. First image is the cover.</p></div>
       <div ref={strip} className="mt-2 flex gap-2 overflow-x-auto pb-2" aria-label="Bundle image order">
-        {draft.items.map((item, index) => <div key={item.id} className={`relative w-24 shrink-0 rounded border-2 ${item.id === current.id ? 'border-blue-400' : 'border-slate-700'}`} onDragOver={(event) => { if (dragging.current) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); const source = dragging.current; dragging.current = null; if (source) reorder(source, item.id); }}>
-          <button type="button" onClick={() => setActiveId(item.id)} aria-label={`Edit image ${index + 1}: ${item.file.name}`} aria-pressed={item.id === current.id} className="relative block h-24 w-full overflow-hidden"><BundleThumbnail item={item} /><span className="absolute bottom-0 left-0 rounded-tr bg-slate-950/90 px-2 py-1 text-xs">{index + 1}</span></button>
+        {activePage.items.map((item, index) => <div key={item.id} className={`relative w-24 shrink-0 rounded border-2 ${item.id === current.id ? 'border-blue-400' : 'border-slate-700'}`} onDragOver={(event) => { if (dragging.current) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); const source = dragging.current; dragging.current = null; if (source) reorder(source, item.id); }}>
+          <button type="button" onClick={() => setActiveId(item.id)} aria-label={`Edit image ${index + 1}: ${item.file.name}`} aria-pressed={item.id === current.id} className="relative block h-24 w-full overflow-hidden"><BundleThumbnail item={item} /><span className="absolute bottom-0 left-0 rounded-tr bg-slate-950/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200">#{String(index + 1).padStart(2, '0')}{index === 0 ? ' · COVER' : ''}</span></button>
           <button type="button" draggable data-bundle-grip={item.id} onDragStart={(event) => { dragging.current = item.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', item.id); }} onDragEnd={() => { dragging.current = null; }} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); move(item.id, event.key === 'ArrowLeft' ? -1 : 1); } }} aria-label={`Reorder bundle image ${index + 1}: ${item.file.name}`} title="Drag or use left/right arrow keys" className="absolute left-0 top-0 grid h-11 w-11 cursor-grab place-items-center rounded-br bg-slate-950/80"><GripVertical size={17} /></button>
-          <button type="button" disabled={draft.items.length <= 1} onClick={() => update({ items: draft.items.filter((candidate) => candidate.id !== item.id) })} aria-label={`Remove bundle image ${index + 1}: ${item.file.name}`} className="absolute right-0 top-0 grid h-11 w-11 place-items-center rounded-bl bg-slate-950/80 disabled:opacity-30"><X size={16} /></button>
+          <button type="button" disabled={activePage.items.length <= 1} onClick={() => removeItem(item.id)} aria-label={`Remove bundle image ${index + 1}: ${item.file.name}`} className="absolute right-0 top-0 grid h-11 w-11 place-items-center rounded-bl bg-slate-950/80 disabled:opacity-30"><X size={16} /></button>
         </div>)}
       </div>
       <div className="mt-4 grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="min-w-0" aria-label="Crop selected image">
-          <div className="mb-3 flex items-center gap-2"><button type="button" className={controlClass} disabled={selectedIndex <= 0} onClick={() => setActiveId(draft.items[selectedIndex - 1].id)} aria-label="Previous bundle image"><ArrowLeft size={16} /></button><p className="min-w-0 flex-1 truncate text-center text-xs text-slate-300" title={current.file.name}>Image {selectedIndex + 1}/{draft.items.length} · {current.file.name}</p><button type="button" className={controlClass} disabled={selectedIndex >= draft.items.length - 1} onClick={() => setActiveId(draft.items[selectedIndex + 1].id)} aria-label="Next bundle image"><ArrowRight size={16} /></button></div>
-          <CropPreview key={current.id} item={current} ratio={preset.ratio} background={draft.background} onCrop={updateCrop} disabled={!!busy} />
-          <p className="mt-2 text-center text-xs text-slate-400">{draft.ratio === 'original' ? 'Original proportions. Choose a ratio to prepare posting copies.' : current.crop.fit === 'cover' ? 'Drag the image to frame it, or use the position controls.' : 'Entire image fitted inside the shared gallery ratio.'}</p>
+          <div className="mb-3 flex items-center gap-2"><button type="button" className={controlClass} disabled={selectedIndex <= 0} onClick={() => setActiveId(activePage.items[selectedIndex - 1].id)} aria-label="Previous bundle image"><ArrowLeft size={16} /></button><p className="min-w-0 flex-1 truncate text-center text-xs text-slate-300" title={current.file.name}>Image {selectedIndex + 1}/{activePage.items.length} · {current.file.name}</p><button type="button" className={controlClass} disabled={selectedIndex >= activePage.items.length - 1} onClick={() => setActiveId(activePage.items[selectedIndex + 1].id)} aria-label="Next bundle image"><ArrowRight size={16} /></button></div>
+          <CropPreview key={`${activePage.id}:${current.id}`} item={current} ratio={preset.ratio} background={activePage.background} onCrop={updateCrop} disabled={!!busy} />
+          <p className="mt-2 text-center text-xs text-slate-400">{activePage.ratio === 'original' ? 'Original proportions. Choose a ratio to prepare posting copies.' : current.crop.fit === 'cover' ? 'Drag the image to frame it, or use the position controls.' : 'Entire image fitted inside the shared gallery ratio.'}</p>
         </section>
-        <section className="flex min-w-0 flex-col gap-4 rounded border border-slate-700 bg-slate-900 p-4" aria-label="Bundle framing and export">
-          <h2 className="text-sm font-semibold">Framing · image {selectedIndex + 1}</h2>
-          <fieldset disabled={draft.ratio === 'original'} className="flex flex-col gap-4 border-0 disabled:opacity-40">
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Bundle image fit"><button type="button" aria-pressed={current.crop.fit === 'cover'} className={`${controlClass} ${current.crop.fit === 'cover' ? 'border-blue-400' : ''}`} onClick={() => updateCrop({ fit: 'cover' })}>Crop to fill</button><button type="button" aria-pressed={current.crop.fit === 'contain'} className={`${controlClass} ${current.crop.fit === 'contain' ? 'border-blue-400' : ''}`} onClick={() => updateCrop({ fit: 'contain' })}>Fit entire image</button></div>
-            <label className="flex flex-col gap-2 text-xs">Zoom · {current.crop.zoom.toFixed(2)}×<input aria-label="Bundle image zoom" type="range" min={1} max={3} step={0.01} value={current.crop.zoom} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ zoom: Number(event.target.value) })} /></label>
-            <label className="flex flex-col gap-2 text-xs">Horizontal position<input aria-label="Bundle horizontal position" type="range" min={0} max={1} step={0.01} value={current.crop.x} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ x: Number(event.target.value) })} /></label>
-            <label className="flex flex-col gap-2 text-xs">Vertical position<input aria-label="Bundle vertical position" type="range" min={0} max={1} step={0.01} value={current.crop.y} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ y: Number(event.target.value) })} /></label>
-            <label className="flex items-center justify-between gap-2 text-xs">Fit background · whole bundle<input aria-label="Bundle fit background" type="color" value={draft.background} onChange={(event) => update({ background: event.target.value })} className="h-9 w-12 rounded border border-slate-500 bg-transparent" /></label>
-            <button type="button" onClick={() => updateCrop({ ...DEFAULT_BUNDLE_CROP })} className={controlClass}><RotateCcw className="mr-1 inline h-4 w-4" />Reset this crop</button>
-          </fieldset>
-          <div className="border-t border-slate-700 pt-4"><label className="flex items-start gap-2 text-sm"><input aria-label="Include posting copies" type="checkbox" checked={includePosting && draft.ratio !== 'original'} disabled={draft.ratio === 'original'} onChange={(event) => setIncludePosting(event.target.checked)} className="mt-1" /><span>Include posting copies<small className="mt-1 block text-xs leading-relaxed text-slate-400">{includePosting && draft.ratio !== 'original' ? 'images/ contains framed JPEGs; originals/ retains untouched source files for recovery.' : 'images/ contains untouched originals. Crop settings are saved, but are not applied to those files.'}</small></span></label></div>
-          <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />Originals and their embedded metadata are retained. Posting copies are JPEGs; enlarging a small source does not create extra detail.</p>
-        </section>
+        <div className="flex flex-col gap-4">
+          <section className="flex min-w-0 flex-col gap-3 rounded border border-slate-700 bg-slate-900 p-4" aria-label="Post details and captions">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-blue-300">
+                Post #{String(selectedIndex + 1).padStart(2, '0')} · {isCurrentVideo ? 'Reel / Video' : 'Feed Photo'}
+              </h2>
+              {selectedIndex === 0 && (
+                <span className="rounded bg-blue-900/60 border border-blue-500/40 px-2 py-0.5 text-[10px] font-medium text-blue-200">
+                  Launch Cover
+                </span>
+              )}
+            </div>
+            <label className="flex flex-col gap-1 text-xs text-slate-300">
+              Post Title / Hook
+              <input
+                type="text"
+                placeholder="e.g. Teaser Reel, Look 01, Editorial Shot"
+                maxLength={120}
+                value={current.title ?? ''}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  updatePage(activePage.id, {
+                    items: activePage.items.map((it) => it.id === current.id ? { ...it, title: val } : it),
+                  });
+                }}
+                className={controlClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-300">
+              Instagram Caption & Hashtags
+              <textarea
+                rows={4}
+                placeholder="Write caption, hashtags, and posting notes... (exported in POSTING_PLAN.md)"
+                maxLength={4000}
+                value={current.caption ?? ''}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  updatePage(activePage.id, {
+                    items: activePage.items.map((it) => it.id === current.id ? { ...it, caption: val } : it),
+                  });
+                }}
+                className={`${controlClass} min-h-24 resize-y font-sans text-xs leading-relaxed`}
+              />
+            </label>
+          </section>
+
+          <section className="flex min-w-0 flex-col gap-4 rounded border border-slate-700 bg-slate-900 p-4" aria-label="Bundle framing and export">
+            <h2 className="text-sm font-semibold">Framing · #{String(selectedIndex + 1).padStart(2, '0')} {isCurrentVideo ? '(Video Clip)' : '(Photo)'}</h2>
+            {isCurrentVideo ? (
+              <div className="rounded border border-amber-900/40 bg-amber-950/20 p-3 text-xs leading-relaxed text-amber-200">
+                ▶ Video clips are exported with original resolution & aspect ratio for Instagram Reels / Videos.
+              </div>
+            ) : (
+              <fieldset disabled={activePage.ratio === 'original'} className="flex flex-col gap-4 border-0 disabled:opacity-40">
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Bundle image fit"><button type="button" aria-pressed={current.crop.fit === 'cover'} className={`${controlClass} ${current.crop.fit === 'cover' ? 'border-blue-400' : ''}`} onClick={() => updateCrop({ fit: 'cover' })}>Crop to fill</button><button type="button" aria-pressed={current.crop.fit === 'contain'} className={`${controlClass} ${current.crop.fit === 'contain' ? 'border-blue-400' : ''}`} onClick={() => updateCrop({ fit: 'contain' })}>Fit entire image</button></div>
+                <label className="flex flex-col gap-2 text-xs">Zoom · {current.crop.zoom.toFixed(2)}×<input aria-label="Bundle image zoom" type="range" min={1} max={3} step={0.01} value={current.crop.zoom} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ zoom: Number(event.target.value) })} /></label>
+                <label className="flex flex-col gap-2 text-xs">Horizontal position<input aria-label="Bundle horizontal position" type="range" min={0} max={1} step={0.01} value={current.crop.x} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ x: Number(event.target.value) })} /></label>
+                <label className="flex flex-col gap-2 text-xs">Vertical position<input aria-label="Bundle vertical position" type="range" min={0} max={1} step={0.01} value={current.crop.y} disabled={current.crop.fit === 'contain'} onChange={(event) => updateCrop({ y: Number(event.target.value) })} /></label>
+                <label className="flex items-center justify-between gap-2 text-xs">Fit background · this page<input aria-label="Bundle fit background" type="color" value={activePage.background} onChange={(event) => updatePage(activePage.id, { background: event.target.value })} className="h-9 w-12 rounded border border-slate-500 bg-transparent" /></label>
+                <button type="button" onClick={() => updateCrop({ ...DEFAULT_BUNDLE_CROP })} className={controlClass}><RotateCcw className="mr-1 inline h-4 w-4" />Reset this crop</button>
+              </fieldset>
+            )}
+            <div className="border-t border-slate-700 pt-4"><label className="flex items-start gap-2 text-sm"><input aria-label="Include posting copies" type="checkbox" checked={includePosting && activePage.ratio !== 'original'} disabled={activePage.ratio === 'original'} onChange={(event) => setIncludePosting(event.target.checked)} className="mt-1" /><span>Include posting copies<small className="mt-1 block text-xs leading-relaxed text-slate-400">{includePosting && activePage.ratio !== 'original' ? 'images/ contains framed JPEGs; originals/ retains untouched source files for recovery.' : 'images/ contains untouched originals. Crop settings are saved, but are not applied to those files.'}</small></span></label></div>
+            <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />Originals and their embedded metadata are retained. Includes POSTING_PLAN.md for scheduling.</p>
+          </section>
+        </div>
       </div>
     </fieldset>
     <footer className="mt-auto border-t border-slate-700 px-4 py-3 text-xs leading-relaxed text-slate-400"><strong className="text-slate-200">On iPhone:</strong> open the ZIP in Files, then import the images/ folder. Check the numbered contact sheet when selecting images in Instagram; phone import order is not guaranteed. Keep the ZIP to restore this bundle later.</footer>

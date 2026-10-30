@@ -16,6 +16,7 @@ export interface GalleryAsset {
   file: File;
   path: string;
   folder: string;
+  isVideo?: boolean;
 }
 export type Colour = [number, number, number];
 export interface ImageMetadata { width: number; height: number; error?: string; edgeColour?: Colour; centreColour?: Colour }
@@ -37,14 +38,24 @@ export function readGallerySettings(value: unknown): GallerySettings {
 export function isImageFile(file: Pick<File, 'type' | 'name'>) {
   return file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|avif|bmp|svg|heic|heif|tiff?)$/i.test(file.name);
 }
+export function isVideoFile(file: Pick<File, 'type' | 'name'>) {
+  return file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|wmv)$/i.test(file.name);
+}
+export function isMediaFile(file: Pick<File, 'type' | 'name'>) {
+  return isImageFile(file) || isVideoFile(file);
+}
 export function appendGalleryAssets(existing: GalleryAsset[], files: File[], makeId = () => crypto.randomUUID()) {
   const known = new Set(existing.map((asset) => asset.file));
   const additions: GalleryAsset[] = [];
   for (const file of files) {
-    if (!isImageFile(file) || file.size > 25 * 1024 * 1024 || known.has(file)) continue;
+    const isVid = isVideoFile(file);
+    const isImg = isImageFile(file);
+    if ((!isImg && !isVid) || known.has(file)) continue;
+    const maxSize = isVid ? 500 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (file.size > maxSize) continue;
     known.add(file);
     const path = file.webkitRelativePath || file.name;
-    additions.push({ id: makeId(), file, path, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '' });
+    additions.push({ id: makeId(), file, path, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', isVideo: isVid });
   }
   return [...existing, ...additions];
 }
@@ -116,7 +127,70 @@ export class ThumbnailPool {
   }
   dispose() { this.disposed = true; this.cache.clear(); this.metadata.clear(); }
 }
+async function makeVideoThumbnail(file: File): Promise<Thumbnail> {
+  if (typeof document === 'undefined') {
+    return { blob: new Blob(['video-thumb']), width: 640, height: 360, edgeColour: [0, 0, 0], centreColour: [0, 0, 0] };
+  }
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  try {
+    video.src = url;
+    await new Promise<void>((resolve, reject) => {
+      const onLoaded = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error('Cannot load video')); };
+      const timeout = setTimeout(() => { cleanup(); reject(new Error('Video thumbnail timeout')); }, 8000);
+      function cleanup() {
+        video.removeEventListener('loadeddata', onLoaded);
+        video.removeEventListener('error', onError);
+        clearTimeout(timeout);
+      }
+      video.addEventListener('loadeddata', onLoaded);
+      video.addEventListener('error', onError);
+    });
+
+    video.currentTime = Math.min(0.1, video.duration || 0);
+    await new Promise<void>((resolve) => {
+      const onSeeked = () => { cleanup(); resolve(); };
+      const timeout = setTimeout(() => { cleanup(); resolve(); }, 600);
+      function cleanup() {
+        video.removeEventListener('seeked', onSeeked);
+        clearTimeout(timeout);
+      }
+      video.addEventListener('seeked', onSeeked);
+    });
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 360;
+    const scale = Math.min(1, 384 / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas unavailable');
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error('Thumbnail failed'))), 'image/webp', 0.75)
+    );
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const colours = sampleColours(pixels, canvas.width, canvas.height);
+    return { blob, width, height, ...colours };
+  } finally {
+    video.src = '';
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function makeThumbnail(file: File): Promise<Thumbnail> {
+  if (isVideoFile(file)) {
+    return makeVideoThumbnail(file);
+  }
+  return makeImageThumbnail(file);
+}
+
+async function makeImageThumbnail(file: File): Promise<Thumbnail> {
   const url = URL.createObjectURL(file);
   const image = new Image();
   try {

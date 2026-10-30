@@ -11,7 +11,7 @@ import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import { ArrowLeft, ArrowRight, Check, FolderOpen, Images, Search, X, Expand, GripVertical } from 'lucide-react';
-import { DEFAULT_GALLERY_SETTINGS, GALLERY_SETTINGS_KEY, ThumbnailPool, appendGalleryAssets, gridGeometry, isImageFile, readGallerySettings, toggleSelection, moveBefore, replaceVisibleOrder, suggestColourOrder, type GalleryAsset, type GallerySettings } from '@/utils/gallery';
+import { DEFAULT_GALLERY_SETTINGS, GALLERY_SETTINGS_KEY, ThumbnailPool, appendGalleryAssets, gridGeometry, isImageFile, isVideoFile, isMediaFile, readGallerySettings, toggleSelection, moveBefore, replaceVisibleOrder, suggestColourOrder, type GalleryAsset, type GallerySettings } from '@/utils/gallery';
 import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
 import 'yet-another-react-lightbox/plugins/counter.css';
@@ -25,6 +25,10 @@ interface Props {
   importNotice: string | null;
 }
 
+// A collage uses up to `maxPhotos`; the shortlist pool can hold more so the user
+// can keep a working set and trim it down per action (see trim flow below).
+const SHORTLIST_CAP = 30;
+
 function Thumbnail({ asset, pool, fit = 'cover' }: { asset: GalleryAsset; pool: ThumbnailPool; fit?: 'cover' | 'contain' }) {
   const [state, setState] = useState<{ url?: string; error?: boolean }>({});
   useEffect(() => {
@@ -37,9 +41,18 @@ function Thumbnail({ asset, pool, fit = 'cover' }: { asset: GalleryAsset; pool: 
     }).catch(() => { if (alive) setState({ error: true }); });
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [asset, pool]);
-  return state.url
-    ? <Image unoptimized fill src={state.url} alt={asset.file.name} draggable={false} style={{ objectFit: fit }} sizes="384px" />
-    : <span className="gallery-placeholder">{state.error ? 'Cannot preview' : <Images size={22} aria-hidden="true" />}</span>;
+  return (
+    <div className="relative h-full w-full">
+      {state.url
+        ? <Image unoptimized fill src={state.url} alt={asset.file.name} draggable={false} style={{ objectFit: fit }} sizes="384px" />
+        : <span className="gallery-placeholder">{state.error ? 'Cannot preview' : <Images size={22} aria-hidden="true" />}</span>}
+      {asset.isVideo && (
+        <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm pointer-events-none">
+          ▶ VIDEO
+        </span>
+      )}
+    </div>
+  );
 }
 
 function GalleryViewer({ assets, initialIndex, selected, maxPhotos, pool, onToggle, onClose, onView, selectionLabel }: {
@@ -47,9 +60,9 @@ function GalleryViewer({ assets, initialIndex, selected, maxPhotos, pool, onTogg
   onToggle: (id: string) => void; onClose: () => void; onView: (index: number) => void; selectionLabel: string;
 }) {
   const [index, setIndex] = useState(initialIndex);
-  const [slides, setSlides] = useState<Array<{ src: string; title: string; description: string }>>([]);
+  const [slides, setSlides] = useState<Array<{ src: string; title: string; description: string; isVideo?: boolean }>>([]);
   useEffect(() => {
-    const urls = assets.map((asset) => ({ src: URL.createObjectURL(asset.file), title: asset.file.name, description: asset.path }));
+    const urls = assets.map((asset) => ({ src: URL.createObjectURL(asset.file), title: asset.file.name, description: asset.path, isVideo: asset.isVideo }));
     const frame = requestAnimationFrame(() => setSlides(urls));
     return () => { cancelAnimationFrame(frame); urls.forEach((slide) => URL.revokeObjectURL(slide.src)); };
   }, [assets]);
@@ -59,10 +72,23 @@ function GalleryViewer({ assets, initialIndex, selected, maxPhotos, pool, onTogg
     on={{ view: ({ index: next }) => { setIndex(next); onView(next); } }}
     thumbnails={{ width: 70, height: 54, gap: 2, padding: 0, border: 0 }}
     toolbar={{ buttons: [<button key="select" type="button" className="yarl__button gallery-viewer-select" aria-label={selectedNow ? `Remove from ${selectionLabel}` : `Add to ${selectionLabel}`} disabled={!selectedNow && selected.length >= maxPhotos} aria-pressed={selectedNow} onClick={() => onToggle(assets[index].id)}>{selectedNow ? 'Selected' : `Add to ${selectionLabel}`} · {selected.length}/{maxPhotos}</button>, 'close'] }}
-    render={{ thumbnail: ({ slide }) => {
-      const position = slides.findIndex((candidate) => candidate.src === slide.src);
-      return assets[position] ? <div className="gallery-viewer-thumb"><Thumbnail asset={assets[position]} pool={pool} /></div> : null;
-    } }} />;
+    render={{
+      slide: ({ slide }) => {
+        const item = slide as { src: string; isVideo?: boolean };
+        if (item.isVideo) {
+          return (
+            <div className="flex h-full w-full items-center justify-center p-4">
+              <video src={item.src} controls autoPlay playsInline className="max-h-[85vh] max-w-[90vw] rounded shadow-2xl" />
+            </div>
+          );
+        }
+        return undefined;
+      },
+      thumbnail: ({ slide }) => {
+        const position = slides.findIndex((candidate) => candidate.src === slide.src);
+        return assets[position] ? <div className="gallery-viewer-thumb"><Thumbnail asset={assets[position]} pool={pool} /></div> : null;
+      }
+    }} />;
 }
 
 function indexedColours(assets: GalleryAsset[], pool: ThumbnailPool) { return assets.filter((asset) => pool.metadata.get(asset.id)?.edgeColour).length; }
@@ -74,8 +100,12 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
   const [bundleSelected, setBundleSelected] = useState<string[]>([]);
   const selected = intent === 'bundle' ? bundleSelected : collageSelected;
   const setSelected = intent === 'bundle' ? setBundleSelected : setCollageSelected;
-  const maxPhotos = intent === 'bundle' ? 20 : collageMaxPhotos;
+  const maxPhotos = intent === 'bundle' ? 20 : SHORTLIST_CAP;
   const selectionLabel = intent === 'bundle' ? 'bundle' : 'collage';
+  // Trim mode: the shortlist can exceed the workflow's collage limit, so creating a
+  // collage from >collageMaxPhotos opens a pick-what-to-use step instead of truncating silently.
+  const [trimming, setTrimming] = useState(false);
+  const [trimIds, setTrimIds] = useState<string[]>([]);
   const [bundleDraft, setBundleDraft] = useState<BundleDraft | null>(null);
   const [bundleOpen, setBundleOpen] = useState(false);
   const [bundleSaved, setBundleSaved] = useState(false);
@@ -93,6 +123,7 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
   const [query, setQuery] = useState('');
   const [folder, setFolder] = useState('');
   const [orientation, setOrientation] = useState('all');
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>('all');
   const [notice, setNotice] = useState('');
   const [suggestion, setSuggestion] = useState<{ ids: string[]; region: 'edgeColour' | 'centreColour' } | null>(null);
   const [colourRegion, setColourRegion] = useState<'edgeColour' | 'centreColour'>('edgeColour');
@@ -133,8 +164,14 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
   const addFiles = useCallback((files: File[]) => {
     setSuggestion(null);
     setAssets((old) => appendGalleryAssets(old, files));
-    const skipped = files.filter((file) => !isImageFile(file) || file.size > 25 * 1024 * 1024).length;
-    setNotice(skipped ? `${skipped} unsupported or over-25 MB files skipped. Originals are unchanged.` : '');
+    const skipped = files.filter((file) => {
+      const isVid = isVideoFile(file);
+      const isImg = isImageFile(file);
+      if (!isImg && !isVid) return true;
+      const maxSize = isVid ? 500 * 1024 * 1024 : 25 * 1024 * 1024;
+      return file.size > maxSize;
+    }).length;
+    setNotice(skipped ? `${skipped} unsupported or oversized files skipped. Originals are unchanged.` : '');
   }, []);
   const inputChanged = (event: ChangeEvent<HTMLInputElement>) => {
     addFiles(Array.from(event.target.files || [])); event.target.value = '';
@@ -161,6 +198,8 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       const meta = pool.metadata.get(asset.id);
       if (query && !asset.path.toLowerCase().includes(query.toLowerCase())) return false;
       if (folder && !(asset.folder === folder || asset.folder.startsWith(`${folder}/`))) return false;
+      if (mediaFilter === 'photos' && asset.isVideo) return false;
+      if (mediaFilter === 'videos' && !asset.isVideo) return false;
       if (orientation !== 'all') {
         if (!meta || meta.error) return false;
         const kind = meta.width === meta.height ? 'square' : meta.width > meta.height ? 'landscape' : 'portrait';
@@ -168,7 +207,7 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       }
       return true;
     }).sort((a, b) => settings.sort === 'manual' ? 0 : settings.sort === 'name' ? a.path.localeCompare(b.path, undefined, { numeric: true }) : settings.sort === 'newest' ? b.file.lastModified - a.file.lastModified : a.file.lastModified - b.file.lastModified);
-  }, [assets, query, folder, orientation, settings.sort, pool, revision]);
+  }, [assets, query, folder, mediaFilter, orientation, settings.sort, pool, revision]);
   const displayAssets = useMemo(() => {
     if (!suggestion) return visible;
     const positions = new Map(suggestion.ids.map((id, i) => [id, i]));
@@ -259,12 +298,28 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
     setBundleDraft(bundleDraft ? { ...bundleDraft, items, updatedAt: Date.now() } : { ...fresh, items });
     setBundleSaved(false); setBundleOpen(true);
   };
+  const startTrim = () => {
+    setTrimIds(selected.slice(0, collageMaxPhotos));
+    setTrimming(true);
+  };
+  const toggleTrim = (id: string) => {
+    setTrimIds((old) => {
+      if (old.includes(id)) return old.filter((value) => value !== id);
+      if (old.length >= collageMaxPhotos) { setNotice(`A collage uses up to ${collageMaxPhotos} photos. Remove one to choose another.`); return old; }
+      return [...old, id];
+    });
+  };
+  const confirmTrim = () => {
+    if (trimIds.length >= 2 && trimIds.length <= collageMaxPhotos && !isProcessing) {
+      void onCreateCollage(trimIds.map((id) => assets.find((asset) => asset.id === id)!.file).filter(Boolean));
+    }
+  };
   const indexed = pool.metadata.size;
   const errors = Array.from(pool.metadata.values()).filter((value) => value.error).length;
   const galleryStyle = { '--gallery-gap': `${settings.gap}px` } as CSSProperties;
 
   return <><div hidden={bundleOpen}><main className="media-library" style={galleryStyle} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!isProcessing && !bundleBusy) addFiles(Array.from(event.dataTransfer.files)); }}>
-    <input ref={fileInput} type="file" multiple accept="image/*" onChange={inputChanged} hidden />
+    <input ref={fileInput} type="file" multiple accept="image/*,video/*" onChange={inputChanged} hidden />
     <input ref={folderInput} type="file" multiple onChange={inputChanged} hidden />
     <input ref={restoreInput} type="file" accept=".zip,application/zip" hidden onChange={(event) => {
       const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
@@ -291,6 +346,7 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
     <div className="gallery-toolbar" inert={isProcessing || bundleBusy || undefined}>
       <label className="gallery-search"><Search size={16} /><input aria-label="Search images" placeholder="Search filenames or folders" value={query} onChange={(event) => { setSuggestion(null); setQuery(event.target.value); viewport.current?.scrollTo(0, 0); }} /></label>
       <select aria-label="Folder" value={folder} onChange={(event) => { setSuggestion(null); setFolder(event.target.value); viewport.current?.scrollTo(0, 0); }}><option value="">All folders</option>{folders.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+      <select aria-label="Media type" value={mediaFilter} onChange={(event) => { setSuggestion(null); setMediaFilter(event.target.value as 'all' | 'photos' | 'videos'); viewport.current?.scrollTo(0, 0); }}><option value="all">All media</option><option value="photos">Photos only</option><option value="videos">Videos only</option></select>
       <select aria-label="Orientation" value={orientation} onChange={(event) => { setSuggestion(null); setOrientation(event.target.value); viewport.current?.scrollTo(0, 0); }}><option value="all">All orientations</option><option value="landscape">Landscape images</option><option value="square">Square images</option><option value="portrait">Portrait images</option></select>
       <select aria-label="Sort images" value={settings.sort} onChange={(event) => update({ sort: event.target.value as GallerySettings['sort'] })}><option value="name">Filename</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="manual">Manual order</option></select>
     </div>
@@ -316,7 +372,7 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       if (event.clientY < bounds.top + 60) viewport.current.scrollTop -= 40;
       else if (event.clientY > bounds.bottom - 60) viewport.current.scrollTop += 40;
     }} inert={isProcessing || bundleBusy || undefined}>
-      {!assets.length ? <div className="gallery-empty"><Images size={40} /><h2>Your photos, room to browse.</h2><p>Open a folder or add images. Browse freely, then choose {intent === 'bundle' ? '1–20 for a post bundle' : `2–${maxPhotos} for a collage`}.</p><button onClick={() => folderInput.current?.click()}>Open a photo folder</button><small>Library photos stay in this tab. Saved bundles retain their selected photos locally; reopen other files after reload.</small></div> : !visible.length ? <div className="gallery-empty"><h2>No matching images</h2><p>{indexed < assets.length ? 'Orientation results update while indexing continues.' : 'Try another search or filter.'}</p><button onClick={() => { setSuggestion(null); setQuery(''); setFolder(''); setOrientation('all'); }}>Clear filters</button></div> :
+      {!assets.length ? <div className="gallery-empty"><Images size={40} /><h2>Your photos, room to browse.</h2><p>Open a folder or add images. Browse freely, then choose {intent === 'bundle' ? '1–20 for a post bundle' : `2–${maxPhotos} for a shortlist; the collage trims to ${collageMaxPhotos}`}.</p><button onClick={() => folderInput.current?.click()}>Open a photo folder</button><small>Library photos stay in this tab. Saved bundles retain their selected photos locally; reopen other files after reload.</small></div> : !visible.length ? <div className="gallery-empty"><h2>No matching images</h2><p>{indexed < assets.length ? 'Orientation results update while indexing continues.' : 'Try another search or filter.'}</p><button onClick={() => { setSuggestion(null); setQuery(''); setFolder(''); setOrientation('all'); }}>Clear filters</button></div> :
         <div style={{ height: rows.getTotalSize(), position: 'relative', width: '100%' }}>
           {rows.getVirtualItems().map((row) => <div key={row.key} data-index={row.index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${row.start}px)`, height: row.size, display: 'grid', gridTemplateColumns: `repeat(${geometry.columns}, minmax(0, 1fr))`, gap: settings.gap }}>
             {displayAssets.slice(row.index * geometry.columns, (row.index + 1) * geometry.columns).map((asset, column) => {
@@ -332,9 +388,25 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
         </div>}
     </div>
     <footer className="gallery-footer" inert={isProcessing || bundleBusy || undefined}>
-      <div className="gallery-tray-heading"><strong>{intent === 'bundle' ? 'Bundle selection' : 'Collage selection'} <span>{selected.length}/{maxPhotos}</span></strong><small>Shift-click to select a range</small></div>
-      <div className="gallery-tray" aria-label={intent === 'bundle' ? 'Bundle selection' : 'Collage selection'}>{selectedAssets.map((asset, position) => <div className="gallery-tray-item" key={asset.id} onDragOver={(event) => { if (dragging.current?.area === 'tray') event.preventDefault(); }} onDrop={(event) => dropOn(event, asset.id, 'tray')}><Thumbnail asset={asset} pool={pool} /><span>{position + 1}</span><button className="gallery-tray-grip" draggable onDragStart={(event) => dragStart(event, asset.id, 'tray')} onDragEnd={() => { dragging.current = null; }} onKeyDown={(event) => keyboardMove(event, asset.id, 'tray')} aria-label={`Reorder selected ${asset.path}`} title="Drag or use arrow keys"><GripVertical size={14} /></button><button aria-label={`Remove ${asset.path} from ${selectionLabel}`} onClick={() => setSelected((old) => old.filter((id) => id !== asset.id))}><X size={12} /></button></div>)}{!selected.length && <span className="gallery-tray-empty">Click any thumbnail to select it. Use its corner button to preview.</span>}</div>
-      <button className="gallery-create" disabled={selected.length < (intent === 'bundle' ? 1 : 2) || isProcessing || bundleBusy} onClick={() => { if (intent === 'bundle') prepareBundle(); else void onCreateCollage(selectedAssets.map((asset) => asset.file)); }}>{isProcessing ? `Preparing ${processingProgress.current}/${processingProgress.total}` : intent === 'bundle' ? 'Prepare bundle' : 'Create collage'}<ArrowRight size={16} /></button>
+      <div className="gallery-tray-heading"><strong>{intent === 'bundle' ? 'Bundle selection' : trimming ? `Choose up to ${collageMaxPhotos} for the collage` : 'Collage shortlist'} <span>{trimming ? `${trimIds.length}/${collageMaxPhotos}` : `${selected.length}/${maxPhotos}`}</span></strong><small>{trimming ? 'Tap the photos you want in the collage' : 'Shift-click to select a range'}</small></div>
+      <div className="gallery-tray" aria-label={intent === 'bundle' ? 'Bundle selection' : trimming ? 'Trim collage selection' : 'Collage shortlist'}>
+        {selectedAssets.map((asset, position) => {
+          const inTrim = !trimming || trimIds.includes(asset.id);
+          return <div className={`gallery-tray-item ${inTrim ? '' : 'is-dimmed'}`} key={asset.id} onDragOver={(event) => { if (dragging.current?.area === 'tray') event.preventDefault(); }} onDrop={(event) => dropOn(event, asset.id, 'tray')}>
+            <Thumbnail asset={asset} pool={pool} />
+            <span>{position + 1}</span>
+            <button className="gallery-tray-grip" draggable={!trimming} disabled={trimming} onDragStart={(event) => dragStart(event, asset.id, 'tray')} onDragEnd={() => { dragging.current = null; }} onKeyDown={(event) => keyboardMove(event, asset.id, 'tray')} aria-label={trimming ? `${inTrim ? 'Remove' : 'Add'} ${asset.path} in the collage` : `Reorder selected ${asset.path}`} title={trimming ? 'Tap the check to add/remove in the collage' : 'Drag or use arrow keys'}><GripVertical size={14} /></button>
+            <button aria-label={trimming?`${inTrim ? 'Remove' : 'Add'} ${asset.path} in the collage`:`Remove ${asset.path} from ${selectionLabel}`} onClick={() => { if (trimming) toggleTrim(asset.id); else setSelected((old) => old.filter((id) => id !== asset.id)); }}>{trimming ? (inTrim ? <Check size={12} /> : <X size={12} />) : <X size={12} />}</button>
+          </div>;
+        })}
+        {!selected.length && <span className="gallery-tray-empty">Click any thumbnail to select it. Use its corner button to preview.</span>}
+      </div>
+      <button className="gallery-create" disabled={(trimming ? trimIds.length < 2 : selected.length < (intent === 'bundle' ? 1 : 2)) || isProcessing || bundleBusy} onClick={() => {
+        if (intent === 'bundle') { prepareBundle(); return; }
+        if (trimming) { confirmTrim(); return; }
+        if (selected.length > collageMaxPhotos) { startTrim(); return; }
+        void onCreateCollage(selectedAssets.map((asset) => asset.file));
+      }}>{isProcessing ? `Preparing ${processingProgress.current}/${processingProgress.total}` : intent === 'bundle' ? 'Prepare bundle' : trimming ? `Use ${trimIds.length} in collage` : selected.length > collageMaxPhotos ? `Choose up to ${collageMaxPhotos} from ${selected.length}` : 'Create collage'}<ArrowRight size={16} /></button>
     </footer>
     {viewer !== null && <GalleryViewer selectionLabel={selectionLabel} assets={viewer.assets} initialIndex={viewer.index} selected={selected} maxPhotos={maxPhotos} pool={pool} onToggle={(id) => select(id)} onClose={closeViewer} onView={(index) => { viewed.current = index; }} />}
   </main></div>{bundleOpen && bundleDraft && <BundleEditor key={bundleDraft.id} draft={bundleDraft} initiallySaved={bundleSaved} onChange={(draft) => { setBundleDraft(draft); setBundleSaved(false); }} onSaved={() => { setBundleSaved(true); void refreshBundles(); }} onBack={() => {

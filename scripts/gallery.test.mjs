@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { DEFAULT_GALLERY_SETTINGS, readGallerySettings, gridGeometry, toggleSelection, ThumbnailPool, isImageFile, appendGalleryAssets, moveBefore, replaceVisibleOrder, sampleColours, suggestColourOrder } from '../utils/gallery.ts';
+import { DEFAULT_GALLERY_SETTINGS, readGallerySettings, gridGeometry, toggleSelection, ThumbnailPool, isImageFile, isVideoFile, isMediaFile, appendGalleryAssets, moveBefore, replaceVisibleOrder, sampleColours, suggestColourOrder } from '../utils/gallery.ts';
 
 assert.deepEqual(readGallerySettings(null), DEFAULT_GALLERY_SETTINGS);
 assert.deepEqual(readGallerySettings({ size: 900, gap: -2, shape: 'other', fit: 'other', labels: 'yes' }), { ...DEFAULT_GALLERY_SETTINGS, size: 320, gap: 0 });
@@ -18,10 +18,21 @@ assert.deepEqual(toggleSelection(['a', 'b'], ids, 'e', null, false, 2), ['a', 'b
 assert.deepEqual(toggleSelection(['a'], ['e'], 'e', 'a', true, 9), ['a', 'e']);
 assert.equal(isImageFile({ name: 'a.JPG', type: '' }), true);
 assert.equal(isImageFile({ name: 'notes.txt', type: 'text/plain' }), false);
+assert.equal(isVideoFile({ name: 'clip.mp4', type: 'video/mp4' }), true);
+assert.equal(isVideoFile({ name: 'clip.MOV', type: '' }), true);
+assert.equal(isVideoFile({ name: 'photo.jpg', type: 'image/jpeg' }), false);
+assert.equal(isMediaFile({ name: 'clip.webm', type: '' }), true);
+assert.equal(isMediaFile({ name: 'document.pdf', type: 'application/pdf' }), false);
+let nextId = 0;
+const videoFile = new File(['v'], 'clip.mp4', { type: 'video/mp4' });
+const photoFile = new File(['p'], 'photo.jpg', { type: 'image/jpeg' });
+const assets = appendGalleryAssets([], [photoFile, videoFile], () => String(nextId++));
+assert.equal(assets.length, 2);
+assert.equal(assets[0].isVideo, false);
+assert.equal(assets[1].isVideo, true);
 const one = new File(['a'], 'photo.png', { lastModified: 100 });
 const different = new File(['b'], 'photo.png', { lastModified: 100 });
-let nextId = 0;
-assert.equal(appendGalleryAssets([], [one, different], () => String(nextId++)).length, 2, 'matching metadata does not suppress different files');
+nextId = 0;
 assert.equal(appendGalleryAssets([], [one, one], () => String(nextId++)).length, 1, 'the same File reference is added once');
 let active = 0, peak = 0, decodes = 0;
 const pool = new ThumbnailPool(() => {}, 2, async () => {

@@ -132,20 +132,25 @@ The source code is MIT-licensed, but the **Photo Grouper name and logo are not**
 
 ## Named post bundles
 
-Choose **Post bundle** in the gallery to select 1–20 photos independently of collage selection.
-Prepare the bundle, give it a nickname, reorder it, and save a local draft. Saved bundles retain
-original photos and order in IndexedDB on this browser origin; clearing browser data or changing
+Choose **Post bundle** in the gallery to shortlist photos and videos independently of collage
+selection. The shortlist is organised into pages — up to 20 pages of up to 9 items each, with the
+first item of page 1 as the cover (`#01 · COVER`). The shortlist holds at most 500 MiB of sources;
+each image may be up to 25 MiB and each video (.mp4, .mov, .webm, .m4v) up to 500 MiB, with a
+thumbnail generated automatically. Prepare the bundle, give it a nickname, reorder items, tune
+each page's ratio / export width / background, and save a local draft. Saved bundles retain
+original files and order in IndexedDB on this browser origin; clearing browser data or changing
 the local host/port makes that local library unavailable. Export a ZIP backup for portability.
 
-Originals export byte-for-byte by default, including embedded metadata. Bundle-wide ratio presets
-(Original, square 1:1, portrait 4:5, portrait 3:4 and landscape 1.91:1) and per-image crop/fit, zoom
-and position controls produce optional JPEG posting copies. Those edits never alter source files.
-A posting-copy ZIP also includes the originals and crop recipe so restoration remains lossless.
-The contact sheet is separate from the numbered posting images. ZIP backup restoration is for
-app-produced bundle archives, not arbitrary ZIP libraries.
+Originals export byte-for-byte by default, including embedded metadata. Per-page ratio presets
+(Original, square 1:1, portrait 4:5, portrait 3:4 and landscape 1.91:1) and per-image crop/fit,
+zoom and position controls produce optional JPEG posting copies. Those edits never alter source
+files. A posting-copy ZIP also includes the originals and crop recipe so restoration remains
+lossless. The contact sheet is separate from the numbered posting images. ZIP backup restoration
+is for app-produced bundle archives, not arbitrary ZIP libraries; older single-page (v1) archives
+restore into the multi-page model automatically.
 
 If saving fails (for example storage quota), the current draft remains in memory as unsaved and
 ZIP export remains available. Downloading a ZIP and saving a browser draft are separate actions.
 On iPhone, extract the ZIP in Files and import the images folder; check the numbered sequence
 against the contact sheet before posting. The app does not upload, publish or guarantee the order
-chosen by Photos or Instagram. Files exceeding the existing 25 MiB source limit are unsupported.
+chosen by Photos or Instagram.
