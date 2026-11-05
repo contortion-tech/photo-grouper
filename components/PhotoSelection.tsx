@@ -10,15 +10,18 @@ import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
-import { ArrowLeft, ArrowRight, Check, FolderOpen, Images, Search, X, Expand, GripVertical } from 'lucide-react';
-import { DEFAULT_GALLERY_SETTINGS, GALLERY_SETTINGS_KEY, ThumbnailPool, appendGalleryAssets, gridGeometry, isImageFile, isVideoFile, isMediaFile, readGallerySettings, toggleSelection, moveBefore, replaceVisibleOrder, suggestColourOrder, type GalleryAsset, type GallerySettings } from '@/utils/gallery';
+import { ArrowLeft, ArrowRight, Check, ChevronUp, FolderOpen, Images, Layers, Search, X, Expand, GripVertical } from 'lucide-react';
+import { DEFAULT_GALLERY_SETTINGS, GALLERY_SETTINGS_KEY, ThumbnailPool, appendGalleryAssets, gridGeometry, isImageFile, isVideoFile, readGallerySettings, toggleSelection, moveBefore, replaceVisibleOrder, suggestColourOrder, type GalleryAsset, type GallerySettings } from '@/utils/gallery';
+import { clusterPhotos, selectBestTemplate, type PhotoCluster } from '@/utils/clustering';
+import { TEMPLATES } from '@/utils/templates';
+import type { LocalPhoto } from '@/types/photo';
 import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
 import 'yet-another-react-lightbox/plugins/counter.css';
 
 interface Props {
   maxPhotos: number;
-  onCreateCollage: (files: File[]) => Promise<void>;
+  onCreateCollage: (files: File[], preferredTemplateId?: string | null) => Promise<void>;
   onBack: () => void;
   isProcessing: boolean;
   processingProgress: { current: number; total: number };
@@ -28,6 +31,24 @@ interface Props {
 // A collage uses up to `maxPhotos`; the shortlist pool can hold more so the user
 // can keep a working set and trim it down per action (see trim flow below).
 const SHORTLIST_CAP = 30;
+
+// Grouped view: virtualized rows are either a cluster header, a grid row of
+// burst-collapsed units, or an expanded burst's candidate strip.
+type GroupRow =
+  | { kind: 'header'; key: string; clusterIndex: number }
+  | { kind: 'units'; key: string; clusterIndex: number; unitIds: string[]; burstIds: string[] }
+  | { kind: 'burstStrip'; key: string; clusterIndex: number; burstId: string; candidateIds: string[] };
+
+const formatClusterSpan = (cluster: PhotoCluster) => {
+  if (!cluster.hasTimestamp || cluster.startTimeMs === null) return 'Unsorted';
+  const end = cluster.endTimeMs ?? cluster.startTimeMs;
+  const sameDay = new Date(cluster.startTimeMs).toDateString() === new Date(end).toDateString();
+  const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return sameDay
+    ? `${day(cluster.startTimeMs)} · ${time(cluster.startTimeMs)} – ${time(end)}`
+    : `${day(cluster.startTimeMs)} – ${day(end)}`;
+};
 
 function Thumbnail({ asset, pool, fit = 'cover' }: { asset: GalleryAsset; pool: ThumbnailPool; fit?: 'cover' | 'contain' }) {
   const [state, setState] = useState<{ url?: string; error?: boolean }>({});
@@ -127,6 +148,11 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
   const [notice, setNotice] = useState('');
   const [suggestion, setSuggestion] = useState<{ ids: string[]; region: 'edgeColour' | 'centreColour' } | null>(null);
   const [colourRegion, setColourRegion] = useState<'edgeColour' | 'centreColour'>('edgeColour');
+  // Scene & burst grouping: clusters are derived from the filtered library and
+  // re-rendered as headered sections; bursts collapse to their representative.
+  const [grouping, setGrouping] = useState(false);
+  const [expandedBursts, setExpandedBursts] = useState<ReadonlySet<string>>(new Set());
+  const [repOverrides, setRepOverrides] = useState<ReadonlyMap<string, string>>(new Map());
   const pendingFocus = useRef<string | null>(null);
   const dragging = useRef<{ id: string; area: 'library' | 'tray' } | null>(null);
   const [revision, setRevision] = useState(0);
@@ -213,6 +239,36 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
     const positions = new Map(suggestion.ids.map((id, i) => [id, i]));
     return [...visible].sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
   }, [visible, suggestion]);
+  const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const canGroup = visible.length >= 2 && visible.every((asset) => pool.metadata.has(asset.id));
+  const clusterInputs = useMemo<LocalPhoto[]>(() => visible.map((asset) => {
+    const meta = pool.metadata.get(asset.id);
+    return { id: asset.id, filename: asset.file.name, width: meta?.width ?? 1, height: meta?.height ?? 1, timestamp: asset.file.lastModified > 0 ? asset.file.lastModified : null };
+  }), [visible, pool]);
+  const clusters = useMemo(() => (grouping && canGroup ? clusterPhotos(clusterInputs) : []), [grouping, canGroup, clusterInputs]);
+  const clusterSummaries = useMemo(() => clusters.map((cluster) => {
+    const photoById = new Map(clusterInputs.map((item) => [item.id, item]));
+    const effectiveIds = cluster.bursts.map((burst) => repOverrides.get(burst.id) ?? burst.representative.id);
+    const effectivePhotos = effectiveIds.map((id) => photoById.get(id)).filter((item): item is LocalPhoto => !!item);
+    return { cluster, effectiveIds, effectivePhotos, recommendedTemplate: selectBestTemplate(effectivePhotos, TEMPLATES) };
+  }), [clusters, clusterInputs, repOverrides]);
+  // assetId → burst info for the collapsed stack badge; burstId → current representative.
+  const burstByRep = useMemo(() => {
+    const map = new Map<string, { burstId: string; count: number }>();
+    for (const summary of clusterSummaries) {
+      for (const burst of summary.cluster.bursts) {
+        if (burst.candidates.length > 1) map.set(repOverrides.get(burst.id) ?? burst.representative.id, { burstId: burst.id, count: burst.candidates.length });
+      }
+    }
+    return map;
+  }, [clusterSummaries, repOverrides]);
+  const repByBurst = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const summary of clusterSummaries) {
+      for (const burst of summary.cluster.bursts) map.set(burst.id, repOverrides.get(burst.id) ?? burst.representative.id);
+    }
+    return map;
+  }, [clusterSummaries, repOverrides]);
   const reorder = (area: 'library' | 'tray', source: string, target: string) => {
     if (area === 'tray') setSelected((old) => moveBefore(old, source, target));
     else {
@@ -249,8 +305,43 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
     else reorder(area, ids[next], id);
   };
   const geometry = gridGeometry(width, settings);
-  const rows = useVirtualizer({ count: Math.ceil(displayAssets.length / geometry.columns), getScrollElement: () => viewport.current, estimateSize: () => geometry.rowHeight + (settings.labels ? 22 : 0), overscan: 3 });
-  useEffect(() => { rows.measure(); }, [rows, geometry.rowHeight, settings.labels]);
+  const groupRows = useMemo<GroupRow[]>(() => {
+    if (!grouping) return [];
+    const rows: GroupRow[] = [];
+    clusterSummaries.forEach((summary, clusterIndex) => {
+      rows.push({ kind: 'header', key: `header-${summary.cluster.id}`, clusterIndex });
+      const chunks: { unitIds: string[]; burstIds: string[] }[] = [];
+      for (const burst of summary.cluster.bursts) {
+        const repId = repOverrides.get(burst.id) ?? burst.representative.id;
+        const last = chunks[chunks.length - 1];
+        if (last && last.unitIds.length < geometry.columns) { last.unitIds.push(repId); last.burstIds.push(burst.id); }
+        else chunks.push({ unitIds: [repId], burstIds: [burst.id] });
+      }
+      chunks.forEach((chunk, chunkIndex) => {
+        rows.push({ kind: 'units', key: `units-${summary.cluster.id}-${chunkIndex}`, clusterIndex, unitIds: chunk.unitIds, burstIds: chunk.burstIds });
+        for (const burstId of chunk.burstIds) {
+          if (!expandedBursts.has(burstId)) continue;
+          const burst = summary.cluster.bursts.find((candidate) => candidate.id === burstId);
+          if (burst) rows.push({ kind: 'burstStrip', key: `burst-${burstId}`, clusterIndex, burstId, candidateIds: burst.candidates.map((item) => item.id) });
+        }
+      });
+    });
+    return rows;
+  }, [grouping, clusterSummaries, repOverrides, expandedBursts, geometry.columns]);
+  const rows = useVirtualizer({
+    count: grouping ? groupRows.length : Math.ceil(displayAssets.length / geometry.columns),
+    getScrollElement: () => viewport.current,
+    estimateSize: (index) => {
+      if (!grouping) return geometry.rowHeight + (settings.labels ? 22 : 0);
+      const groupRow = groupRows[index];
+      if (groupRow?.kind === 'header') return 46;
+      if (groupRow?.kind === 'burstStrip') return 132;
+      return geometry.rowHeight + (settings.labels ? 22 : 0);
+    },
+    getItemKey: (index) => (grouping ? groupRows[index]?.key ?? `group-${index}` : `row-${index}`),
+    overscan: 3,
+  });
+  useEffect(() => { rows.measure(); }, [rows, geometry.rowHeight, settings.labels, grouping, groupRows]);
   useEffect(() => {
     const id = pendingFocus.current;
     if (!id) return;
@@ -314,6 +405,49 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       void onCreateCollage(trimIds.map((id) => assets.find((asset) => asset.id === id)!.file).filter(Boolean));
     }
   };
+  const toggleBurst = (burstId: string) => {
+    setExpandedBursts((old) => {
+      const next = new Set(old);
+      if (next.has(burstId)) next.delete(burstId); else next.add(burstId);
+      return next;
+    });
+  };
+  const setBurstRepresentative = (burstId: string, assetId: string) => {
+    setRepOverrides((old) => new Map(old).set(burstId, assetId));
+  };
+  const selectCluster = (clusterIndex: number) => {
+    const summary = clusterSummaries[clusterIndex];
+    if (!summary) return;
+    const ids = [...summary.effectiveIds];
+    if (ids.length < 2) { setNotice('A collage needs at least 2 photos — pick a bigger cluster.'); return; }
+    if (ids.length > collageMaxPhotos) {
+      setIntent('collage');
+      setCollageSelected(ids.slice(0, SHORTLIST_CAP));
+      setTrimIds(ids.slice(0, collageMaxPhotos));
+      setTrimming(true);
+      setNotice(`This cluster has ${ids.length} photos. Choose up to ${collageMaxPhotos} for the collage.`);
+      return;
+    }
+    // Only hand the editor a template that exactly fits the cluster size;
+    // otherwise the app's own default layout is the safer pre-selection.
+    const recommended = summary.recommendedTemplate.template;
+    const templatePref = recommended && recommended.slots.length === ids.length ? recommended.id : null;
+    const files = ids.map((id) => assetById.get(id)?.file).filter((file): file is File => !!file);
+    setIntent('collage');
+    setCollageSelected(ids);
+    void onCreateCollage(files, templatePref);
+  };
+  const renderGalleryTile = (asset: GalleryAsset, flatIndex: number) => {
+    const picked = selected.indexOf(asset.id);
+    const burstInfo = grouping ? burstByRep.get(asset.id) : undefined;
+    return <div key={asset.id} className={`gallery-tile ${picked >= 0 ? 'is-selected' : ''}`} data-asset-id={asset.id} onDragOver={(event) => { if (dragging.current?.area === 'library') event.preventDefault(); }} onDrop={(event) => dropOn(event, asset.id, 'library')}>
+      <button className="gallery-image" style={{ height: geometry.cellHeight }} onClick={(event) => select(asset.id, event.shiftKey)} aria-label={`${picked >= 0 ? 'Deselect' : 'Select'} ${asset.path}`} aria-pressed={picked >= 0} title={`Click to select · ${asset.path}`}><Thumbnail asset={asset} pool={pool} fit={settings.shape === 'original' ? 'contain' : settings.fit} /><span className="gallery-selection-badge" aria-hidden="true">{picked >= 0 ? picked + 1 : <Check size={14} />}</span></button>
+      <button className="gallery-preview" aria-label={`View ${asset.path}`} title="Open large preview" onClick={() => { viewed.current = flatIndex; setViewer({ assets: displayAssets, index: flatIndex }); }}><Expand size={16} /></button>
+      {burstInfo && <button className="gallery-burst-badge" aria-expanded={expandedBursts.has(burstInfo.burstId)} aria-label={`Burst with ${burstInfo.count} photos`} title="Show burst candidates" onClick={(event) => { event.stopPropagation(); toggleBurst(burstInfo.burstId); }}>🥞 {burstInfo.count} photos</button>}
+      <button className="gallery-grip" onClick={(event) => select(asset.id, event.shiftKey)} disabled={!!suggestion || grouping} draggable={!suggestion && !grouping} onDragStart={(event) => dragStart(event, asset.id, 'library')} onDragEnd={() => { dragging.current = null; }} onKeyDown={(event) => keyboardMove(event, asset.id, 'library')} aria-label={`Reorder ${asset.path}`} title="Drag to reorder; arrow keys when focused"><GripVertical size={16} /></button>
+      {settings.labels && <div className="gallery-filename" title={asset.path}>{asset.file.name}</div>}
+    </div>;
+  };
   const indexed = pool.metadata.size;
   const errors = Array.from(pool.metadata.values()).filter((value) => value.error).length;
   const galleryStyle = { '--gallery-gap': `${settings.gap}px` } as CSSProperties;
@@ -349,10 +483,11 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       <select aria-label="Media type" value={mediaFilter} onChange={(event) => { setSuggestion(null); setMediaFilter(event.target.value as 'all' | 'photos' | 'videos'); viewport.current?.scrollTo(0, 0); }}><option value="all">All media</option><option value="photos">Photos only</option><option value="videos">Videos only</option></select>
       <select aria-label="Orientation" value={orientation} onChange={(event) => { setSuggestion(null); setOrientation(event.target.value); viewport.current?.scrollTo(0, 0); }}><option value="all">All orientations</option><option value="landscape">Landscape images</option><option value="square">Square images</option><option value="portrait">Portrait images</option></select>
       <select aria-label="Sort images" value={settings.sort} onChange={(event) => update({ sort: event.target.value as GallerySettings['sort'] })}><option value="name">Filename</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="manual">Manual order</option></select>
+      <button className="gallery-action" aria-pressed={grouping} disabled={!grouping && !canGroup} title={canGroup ? 'Segment the grid into scenes and photo bursts' : 'Finish indexing to group by scene and burst'} onClick={() => { setSuggestion(null); setExpandedBursts(new Set()); setRepOverrides(new Map()); setGrouping((old) => !old); viewport.current?.scrollTo(0, 0); }}><Layers size={14} /> Group by scene & burst</button>
     </div>
     <div className="gallery-toolbar" inert={isProcessing || bundleBusy || undefined}>
       <select aria-label="Colour sampling region" value={colourRegion} onChange={(event) => { setSuggestion(null); setColourRegion(event.target.value as typeof colourRegion); }}><option value="edgeColour">Edge colours · background hint</option><option value="centreColour">Centre colours · outfit hint</option></select>
-      <button className="gallery-action" disabled={!!suggestion || visible.length < 2 || visible.some((asset) => !pool.metadata.has(asset.id)) || indexedColours(visible, pool) < 2} onClick={() => { setSuggestion({ ids: suggestColourOrder(visible.map((a) => a.id), pool.metadata, colourRegion), region: colourRegion }); viewport.current?.scrollTo(0, 0); }}>Suggest colour order</button>
+      <button className="gallery-action" disabled={!!suggestion || grouping || visible.length < 2 || visible.some((asset) => !pool.metadata.has(asset.id)) || indexedColours(visible, pool) < 2} onClick={() => { setSuggestion({ ids: suggestColourOrder(visible.map((a) => a.id), pool.metadata, colourRegion), region: colourRegion }); viewport.current?.scrollTo(0, 0); }}>Suggest colour order</button>
       <small>Local colour hints; no subject recognition or file changes.</small>
       <span className="gallery-help">Drag a grip to reorder · focus a grip and use arrow keys</span>
     </div>
@@ -372,19 +507,49 @@ export default function PhotoSelection({ maxPhotos: collageMaxPhotos, onCreateCo
       if (event.clientY < bounds.top + 60) viewport.current.scrollTop -= 40;
       else if (event.clientY > bounds.bottom - 60) viewport.current.scrollTop += 40;
     }} inert={isProcessing || bundleBusy || undefined}>
-      {!assets.length ? <div className="gallery-empty"><Images size={40} /><h2>Your photos, room to browse.</h2><p>Open a folder or add images. Browse freely, then choose {intent === 'bundle' ? '1–20 for a post bundle' : `2–${maxPhotos} for a shortlist; the collage trims to ${collageMaxPhotos}`}.</p><button onClick={() => folderInput.current?.click()}>Open a photo folder</button><small>Library photos stay in this tab. Saved bundles retain their selected photos locally; reopen other files after reload.</small></div> : !visible.length ? <div className="gallery-empty"><h2>No matching images</h2><p>{indexed < assets.length ? 'Orientation results update while indexing continues.' : 'Try another search or filter.'}</p><button onClick={() => { setSuggestion(null); setQuery(''); setFolder(''); setOrientation('all'); }}>Clear filters</button></div> :
+      {!assets.length ? <div className="gallery-empty"><Images size={40} /><h2>Your photos, room to browse.</h2><p>Open a folder or add images. Browse freely, then choose {intent === 'bundle' ? '1–20 for a post bundle' : `2–${maxPhotos} for a shortlist; the collage trims to ${collageMaxPhotos}`}.</p><button onClick={() => folderInput.current?.click()}>Open a photo folder</button><small>Library photos stay in this tab. Saved bundles retain their selected photos locally; reopen other files after reload.</small></div> : !visible.length ? <div className="gallery-empty"><h2>No matching images</h2><p>{indexed < assets.length ? 'Orientation results update while indexing continues.' : 'Try another search or filter.'}</p><button onClick={() => { setSuggestion(null); setQuery(''); setFolder(''); setOrientation('all'); }}>Clear filters</button></div> : grouping && !groupRows.length ? <div className="gallery-empty"><Images size={40} /><h2>Grouping needs a moment</h2><p>Wait for image indexing to finish, then toggle grouping again.</p></div> :
         <div style={{ height: rows.getTotalSize(), position: 'relative', width: '100%' }}>
-          {rows.getVirtualItems().map((row) => <div key={row.key} data-index={row.index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${row.start}px)`, height: row.size, display: 'grid', gridTemplateColumns: `repeat(${geometry.columns}, minmax(0, 1fr))`, gap: settings.gap }}>
-            {displayAssets.slice(row.index * geometry.columns, (row.index + 1) * geometry.columns).map((asset, column) => {
-              const picked = selected.indexOf(asset.id);
-              return <div key={asset.id} className={`gallery-tile ${picked >= 0 ? 'is-selected' : ''}`} data-asset-id={asset.id} onDragOver={(event) => { if (dragging.current?.area === 'library') event.preventDefault(); }} onDrop={(event) => dropOn(event, asset.id, 'library')}>
-                <button className="gallery-image" style={{ height: geometry.cellHeight }} onClick={(event) => select(asset.id, event.shiftKey)} aria-label={`${picked >= 0 ? 'Deselect' : 'Select'} ${asset.path}`} aria-pressed={picked >= 0} title={`Click to select · ${asset.path}`}><Thumbnail asset={asset} pool={pool} fit={settings.shape === 'original' ? 'contain' : settings.fit} /><span className="gallery-selection-badge" aria-hidden="true">{picked >= 0 ? picked + 1 : <Check size={14} />}</span></button>
-                <button className="gallery-preview" aria-label={`View ${asset.path}`} title="Open large preview" onClick={() => { const index = row.index * geometry.columns + column; viewed.current = index; setViewer({ assets: displayAssets, index }); }}><Expand size={16} /></button>
-                <button className="gallery-grip" onClick={(event) => select(asset.id, event.shiftKey)} disabled={!!suggestion} draggable={!suggestion} onDragStart={(event) => dragStart(event, asset.id, 'library')} onDragEnd={() => { dragging.current = null; }} onKeyDown={(event) => keyboardMove(event, asset.id, 'library')} aria-label={`Reorder ${asset.path}`} title="Drag to reorder; arrow keys when focused"><GripVertical size={16} /></button>
-                {settings.labels && <div className="gallery-filename" title={asset.path}>{asset.file.name}</div>}
+          {rows.getVirtualItems().map((row) => {
+            if (!grouping) {
+              return <div key={row.key} data-index={row.index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${row.start}px)`, height: row.size, display: 'grid', gridTemplateColumns: `repeat(${geometry.columns}, minmax(0, 1fr))`, gap: settings.gap }}>
+                {displayAssets.slice(row.index * geometry.columns, (row.index + 1) * geometry.columns).map((asset, column) => renderGalleryTile(asset, row.index * geometry.columns + column))}
               </div>;
-            })}
-          </div>)}
+            }
+            const groupRow = groupRows[row.index];
+            if (!groupRow) return null;
+            if (groupRow.kind === 'header') {
+              const summary = clusterSummaries[groupRow.clusterIndex];
+              if (!summary) return null;
+              const burstCount = summary.cluster.bursts.filter((unit) => unit.isBurst).length;
+              return <div key={row.key} data-index={row.index} className="gallery-cluster-header" style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${row.start}px)`, height: row.size }}>
+                <strong>{formatClusterSpan(summary.cluster)}</strong>
+                <span>{summary.cluster.photos.length} photos{burstCount ? ` · ${burstCount} burst${burstCount === 1 ? '' : 's'}` : ''}</span>
+                {summary.recommendedTemplate.template && <span className="gallery-cluster-pill" title={`Recommended layout · ${Math.round(summary.recommendedTemplate.score * 100)}% match`}>{summary.recommendedTemplate.template.name}</span>}
+                <button className="gallery-action" onClick={() => selectCluster(groupRow.clusterIndex)} title="Load these photos into the collage editor"><Check size={14} /> Select cluster</button>
+              </div>;
+            }
+            if (groupRow.kind === 'burstStrip') {
+              return <div key={row.key} data-index={row.index} className="gallery-burst-strip" role="group" aria-label="Burst candidates" style={{ position: 'absolute', top: 0, left: 12, width: 'calc(100% - 24px)', transform: `translateY(${row.start}px)`, height: row.size }}>
+                <span className="gallery-burst-strip-label">Burst · {groupRow.candidateIds.length}</span>
+                <div className="gallery-burst-strip-thumbs">
+                  {groupRow.candidateIds.map((id) => {
+                    const asset = assetById.get(id);
+                    if (!asset) return null;
+                    const isRep = repByBurst.get(groupRow.burstId) === id;
+                    return <button key={id} className={`gallery-burst-candidate ${isRep ? 'is-representative' : ''}`} aria-pressed={isRep} title={isRep ? 'Current representative' : 'Use as the cluster representative'} onClick={() => setBurstRepresentative(groupRow.burstId, id)}>
+                      <Thumbnail asset={asset} pool={pool} />
+                      <span>{asset.file.name}</span>
+                    </button>;
+                  })}
+                </div>
+                <button className="gallery-action" onClick={() => toggleBurst(groupRow.burstId)}><ChevronUp size={14} /> Collapse</button>
+              </div>;
+            }
+            const tiles = groupRow.unitIds.map((id) => assetById.get(id)).filter((asset): asset is GalleryAsset => !!asset);
+            return <div key={row.key} data-index={row.index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${row.start}px)`, height: row.size, display: 'grid', gridTemplateColumns: `repeat(${geometry.columns}, minmax(0, 1fr))`, gap: settings.gap }}>
+              {tiles.map((asset) => renderGalleryTile(asset, displayAssets.findIndex((candidate) => candidate.id === asset.id)))}
+            </div>;
+          })}
         </div>}
     </div>
     <footer className="gallery-footer" inert={isProcessing || bundleBusy || undefined}>

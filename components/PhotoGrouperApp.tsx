@@ -112,7 +112,7 @@ export default function PhotoGrouperApp({ workflow = DEFAULT_WORKFLOW }: PhotoGr
     setPhase('selection');
   }, []);
 
-  const processFiles = useCallback(async (incomingFiles: File[]) => {
+  const processFiles = useCallback(async (incomingFiles: File[], preferredTemplateId?: string | null) => {
     if (processingRef.current) return;
     processingRef.current = true;
     setIsProcessing(true);
@@ -150,7 +150,12 @@ export default function PhotoGrouperApp({ workflow = DEFAULT_WORKFLOW }: PhotoGr
       const configured = workflow.templateId
         ? TEMPLATES.find((candidate) => candidate.id === workflow.templateId && candidate.slots.length === prepared.length)
         : null;
-      const template = configured ?? getDefaultTemplate(prepared.length);
+      // Cluster "Select cluster" hands over its recommended layout; it only
+      // applies when no workflow template is configured and it fits exactly.
+      const clusterPreferred = preferredTemplateId && !configured
+        ? TEMPLATES.find((candidate) => candidate.id === preferredTemplateId && candidate.slots.length === prepared.length) ?? null
+        : null;
+      const template = configured ?? clusterPreferred ?? getDefaultTemplate(prepared.length);
       setSelectedTemplate(template);
       setPhotoAssignments(initAssignments(template, prepared.length));
       setSlotEdits(initEdits(template, workflow.defaultFitMode));

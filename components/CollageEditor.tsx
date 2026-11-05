@@ -24,6 +24,9 @@ import {
     CollageStyle,
     BACKGROUND_PRESETS,
     ASPECT_PRESETS,
+    SHADOW_OPTIONS,
+    shadowToCss,
+    ShadowToken,
 } from '@/utils/photoEdits';
 
 import { PhotoData } from '@/types/photo';
@@ -238,6 +241,8 @@ export default function CollageEditor({
                                         slotBackground={collageStyle.background}
                                         cornerRadius={collageStyle.cornerRadius * styleScale}
                                         halfGap={(collageStyle.gap * styleScale) / 2}
+                                        shadowToken={collageStyle.shadow ?? 'none'}
+                                        shadowScale={styleScale}
                                         onTap={handleTap}
                                         onLongPress={handleLongPress}
                                         onEditsChange={handleEditsChange}
@@ -328,6 +333,8 @@ interface EditableSlotProps {
     slotBackground: string;
     cornerRadius: number;
     halfGap: number;
+    shadowToken: ShadowToken;
+    shadowScale: number;
     onTap: (slotId: string) => void;
     onLongPress: (slotId: string) => void;
     onEditsChange: (slotId: string, updates: Partial<PhotoEdits>) => void;
@@ -335,7 +342,7 @@ interface EditableSlotProps {
 
 const EditableSlot = React.memo(function EditableSlot({
     slot, slotNumber, photo, edits, isSelected, isSwapSource, swapArmed,
-    comparisonLabel, slotBackground, cornerRadius, halfGap,
+    comparisonLabel, slotBackground, cornerRadius, halfGap, shadowToken, shadowScale,
     onTap, onLongPress, onEditsChange,
 }: EditableSlotProps) {
     const innerRef = useRef<HTMLDivElement>(null);
@@ -570,6 +577,7 @@ const EditableSlot = React.memo(function EditableSlot({
                 style={{
                     borderRadius: cornerRadius,
                     background: slotBackground,
+                    boxShadow: shadowToCss(shadowToken, shadowScale),
                     touchAction: 'none',
                     WebkitUserSelect: 'none',
                 }}
@@ -1055,12 +1063,29 @@ function StyleTab({
                 </div>
             </div>
 
+            <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Photo shadow</p>
+                <div className="grid grid-cols-3 rounded-xl bg-slate-800 p-1" role="group" aria-label="Photo shadow">
+                    {SHADOW_OPTIONS.map((option) => (
+                        <button
+                            key={option.id}
+                            onClick={() => onUpdate({ shadow: option.id })}
+                            aria-pressed={style.shadow === option.id}
+                            className={`rounded-lg px-2 py-2 text-sm font-medium transition ${style.shadow === option.id ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">Drop shadow under every photo. Exported at full resolution.</p>
+            </div>
+
             <SliderRow label="Photo gap" value={style.gap} min={0} max={24} step={1} unit="px" onChange={(v) => onUpdate({ gap: v })} />
             <SliderRow label="Corner radius" value={style.cornerRadius} min={0} max={32} step={1} unit="px" onChange={(v) => onUpdate({ cornerRadius: v })} />
             <SliderRow label="Outer padding" value={style.padding} min={0} max={40} step={1} unit="px" onChange={(v) => onUpdate({ padding: v })} />
 
             <button
-                onClick={() => onUpdate({ background: '#ffffff', gap: 6, cornerRadius: 4, padding: 0 })}
+                onClick={() => onUpdate({ background: '#ffffff', gap: 6, cornerRadius: 4, padding: 0, shadow: 'none' })}
                 className="w-full py-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm font-medium flex items-center justify-center gap-2"
             >
                 <X className="w-4 h-4" />

@@ -258,11 +258,41 @@ export function editsToTransform(edits: PhotoEdits, effectiveScale = edits.scale
 
 // ===== Collage-wide style =====
 
+export type ShadowToken = 'none' | 'subtle' | 'floating';
+
+export interface ShadowStyle {
+    offsetX: number; // px in editor reference space (448px preview width)
+    offsetY: number;
+    blur: number;
+    color: string;
+}
+
+/** Shared shadow vocabulary: one definition drives both the preview and the canvas export. */
+export const SHADOW_PRESETS: Record<ShadowToken, ShadowStyle> = {
+    none: { offsetX: 0, offsetY: 0, blur: 0, color: 'rgba(0, 0, 0, 0)' },
+    subtle: { offsetX: 0, offsetY: 2, blur: 8, color: 'rgba(0, 0, 0, 0.18)' },
+    floating: { offsetX: 0, offsetY: 8, blur: 24, color: 'rgba(0, 0, 0, 0.32)' },
+};
+
+export const SHADOW_OPTIONS: { id: ShadowToken; label: string }[] = [
+    { id: 'none', label: 'None' },
+    { id: 'subtle', label: 'Subtle' },
+    { id: 'floating', label: 'Floating' },
+];
+
+/** CSS box-shadow for the editor preview, scaled from the 448px reference width. */
+export function shadowToCss(token: ShadowToken, scale = 1): string {
+    const preset = SHADOW_PRESETS[token];
+    if (token === 'none') return 'none';
+    return `${preset.offsetX * scale}px ${preset.offsetY * scale}px ${preset.blur * scale}px ${preset.color}`;
+}
+
 export interface CollageStyle {
     background: string;   // hex color for canvas background
     gap: number;          // 0 .. 24 (px in editor; scaled for export)
     cornerRadius: number; // 0 .. 32 (px in editor; scaled for export)
     padding: number;      // 0 .. 40 (px outer padding in editor; scaled for export)
+    shadow: ShadowToken;  // drop shadow applied to every photo slot
 }
 
 export const DEFAULT_STYLE: CollageStyle = {
@@ -270,6 +300,7 @@ export const DEFAULT_STYLE: CollageStyle = {
     gap: 6,
     cornerRadius: 4,
     padding: 0,
+    shadow: 'none',
 };
 
 export const BACKGROUND_PRESETS: { name: string; value: string }[] = [

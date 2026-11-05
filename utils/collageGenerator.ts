@@ -16,6 +16,8 @@ import {
   clampOffsets,
   effectivePhotoScale,
   basePhotoDimensions,
+  ShadowToken,
+  SHADOW_PRESETS,
 } from './photoEdits';
 
 import { PhotoData } from '@/types/photo';
@@ -98,10 +100,34 @@ function pathRoundedRect(
   ctx.quadraticCurveTo(x, y, x + radius, y);
 }
 
+function applyShadowToken(
+  ctx: CanvasRenderingContext2D,
+  token: ShadowToken,
+  pxScale: number,
+) {
+  const preset = SHADOW_PRESETS[token];
+  ctx.shadowColor = preset.color;
+  ctx.shadowOffsetX = preset.offsetX * pxScale;
+  ctx.shadowOffsetY = preset.offsetY * pxScale;
+  ctx.shadowBlur = preset.blur * pxScale;
+}
+
+function clearShadow(ctx: CanvasRenderingContext2D) {
+  ctx.shadowColor = 'transparent';
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.shadowBlur = 0;
+}
+
 /**
  * Draw an image into a slot, replicating the editor's CSS pipeline:
  * cover-fit → translate(offset) → scale → rotate, with the offset clamped so
  * the image always covers the slot (never reveals empty space).
+ *
+ * Shadow tokens are cast by filling the slot's rounded rect (hidden beneath a
+ * cover-fit photo, background-colored for contain) before the clipped image
+ * draw. Cover-fit draws are oversized by a fraction of a pixel so antialiased
+ * clip edges never leak background seams at high export resolutions.
  */
 function drawSlot(
   ctx: CanvasRenderingContext2D,
@@ -109,8 +135,21 @@ function drawSlot(
   x: number, y: number, w: number, h: number,
   edits: PhotoEdits,
   cornerRadius: number,
+  shadowToken: ShadowToken = 'none',
+  pxScale = 1,
+  casterFill: string | null = null,
 ) {
   ctx.save();
+
+  if (shadowToken !== 'none' && casterFill) {
+    ctx.save();
+    applyShadowToken(ctx, shadowToken, pxScale);
+    ctx.fillStyle = casterFill;
+    ctx.beginPath();
+    pathRoundedRect(ctx, x, y, w, h, cornerRadius);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.beginPath();
   pathRoundedRect(ctx, x, y, w, h, cornerRadius);
@@ -124,8 +163,9 @@ function drawSlot(
   const imgAspect = iw / ih;
 
   const base = basePhotoDimensions(imgAspect, w, h, edits.fitMode);
-  const nw = base.width;
-  const nh = base.height;
+  const seamOverdraw = edits.fitMode === 'cover' ? Math.max(0.5, pxScale * 0.5) : 0;
+  const nw = base.width + seamOverdraw * 2;
+  const nh = base.height + seamOverdraw * 2;
 
   // Clamp offsets to the same bounds used in the editor.
   const { offsetX, offsetY } = clampOffsets(edits, imgAspect, w, h);
@@ -224,6 +264,10 @@ export async function generateCollage(
     throw new Error('Canvas rendering context unavailable');
   }
 
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  clearShadow(ctx);
+
   ctx.fillStyle = collageStyle.background || '#ffffff';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
@@ -246,7 +290,7 @@ export async function generateCollage(
 
     try {
       const img = await loadImage(photo.previewUrl);
-      drawSlot(ctx, img, sx, sy, sw, sh, edits, cornerPx);
+      drawSlot(ctx, img, sx, sy, sw, sh, edits, cornerPx, collageStyle.shadow ?? 'none', pxScale, collageStyle.background || '#ffffff');
     } catch (error) {
       console.error('Failed to load image:', error);
       ctx.fillStyle = '#e2e8f0';
