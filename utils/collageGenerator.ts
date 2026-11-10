@@ -27,6 +27,8 @@ export type ExportFormat = 'jpeg' | 'png';
 export interface ExportOptions {
   format: ExportFormat;
   width: number;
+  /** MJ-072: high-DPI detail multiplier applied on top of the base resolution. */
+  exportMultiplier?: 1 | 2 | 3;
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -54,6 +56,65 @@ export function getExportDimensions(aspect: number, width: number) {
     return { width: longestEdge, height: Math.round(longestEdge / aspect) };
   }
   return { width: Math.round(longestEdge * aspect), height: longestEdge };
+}
+
+// MJ-072 rasterization guards: a 2D canvas buffer is width × height × 4 bytes,
+// so caps keep high-DPI poster exports (2x/3x multipliers) from overflowing
+// WebKit canvas limits or device memory. 64 MP ≈ 256 MB RGBA; 12288 is the
+// longest edge WebKit rasterizes reliably.
+export const MAX_EXPORT_LONG_EDGE = 12288;
+export const MAX_EXPORT_PIXELS = 64_000_000;
+
+export interface ResolvedExportDimensions {
+  width: number;
+  height: number;
+  /** True when the memory/edge guard downscaled the requested resolution. */
+  clamped: boolean;
+  /** Which resolution path produced the base size. */
+  base: 'canvas-resolution' | 'aspect-width';
+}
+
+/**
+ * Final rasterization size for an export. Poster templates carry an exact
+ * `canvasResolution` used when the operator has not forced an aspect override;
+ * otherwise the classic aspect + width path applies. The multiplier scales
+ * whichever base is active, and the guard clamps while preserving aspect.
+ */
+export function resolveExportDimensions(
+  template: Pick<CollageTemplate, 'aspectRatio' | 'canvasResolution'>,
+  aspectOverride: number | null,
+  exportOptions: Pick<ExportOptions, 'width' | 'exportMultiplier'>,
+): ResolvedExportDimensions {
+  const multiplier = exportOptions.exportMultiplier ?? 1;
+  let width: number;
+  let height: number;
+  let base: ResolvedExportDimensions['base'];
+  if (!aspectOverride && template.canvasResolution) {
+    width = template.canvasResolution.width * multiplier;
+    height = template.canvasResolution.height * multiplier;
+    base = 'canvas-resolution';
+  } else {
+    const aspect = aspectOverride ?? template.aspectRatio;
+    const legacy = getExportDimensions(aspect, exportOptions.width);
+    width = legacy.width * multiplier;
+    height = legacy.height * multiplier;
+    base = 'aspect-width';
+  }
+  const pixels = width * height;
+  const guardScale = Math.min(
+    1,
+    MAX_EXPORT_LONG_EDGE / Math.max(width, height),
+    Math.sqrt(MAX_EXPORT_PIXELS / pixels),
+  );
+  if (guardScale < 1) {
+    return {
+      width: Math.round(width * guardScale),
+      height: Math.round(height * guardScale),
+      clamped: true,
+      base,
+    };
+  }
+  return { width: Math.round(width), height: Math.round(height), clamped: false, base };
 }
 
 export function getExportFileDetails(format: ExportFormat) {
@@ -248,8 +309,7 @@ export async function generateCollage(
   exportOptions: ExportOptions = DEFAULT_EXPORT_OPTIONS,
   comparisonLabels: ComparisonLabels = DEFAULT_COMPARISON_LABELS,
 ): Promise<string> {
-  const aspect = outputAspectRatio ?? template.aspectRatio;
-  const { width: canvasWidth, height: canvasHeight } = getExportDimensions(aspect, exportOptions.width);
+  const { width: canvasWidth, height: canvasHeight } = resolveExportDimensions(template, outputAspectRatio, exportOptions);
 
   const pxScale = canvasWidth / REFERENCE_WIDTH;
   // Fold presets carry a hairline divider token; honored while the user keeps

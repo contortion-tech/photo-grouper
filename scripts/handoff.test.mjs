@@ -108,4 +108,14 @@ result = await response.json();
 assert.equal(result.ok, true);
 assert.equal(result.staged, true, 'non-loopback probe is refused, not thrown');
 
+// MJ-072 companion readiness status endpoint (pulse pills data source).
+const { GET } = await import('../app/api/handoff/route.ts');
+const status = await (await GET()).json();
+assert.equal(status.ok, true);
+assert.equal(status.framecrop.port, 47823);
+assert.equal(status.fileconverter.port, 3301);
+assert.equal(status.framecrop.online, false, 'framecrop offline probe');
+assert.equal(status.fileconverter.online, false, 'non-loopback FCL base reads offline');
+assert.equal(status.framecrop.name, null);
+
 console.log('Handoff: sidecar schema, collision safety, byte integrity, invalid payloads and offline probes passed.');

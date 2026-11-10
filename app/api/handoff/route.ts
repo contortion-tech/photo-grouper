@@ -130,6 +130,32 @@ function fail(error: string, status = 400): Response {
   return Response.json({ ok: false, error }, { status });
 }
 
+/** Pull a human-readable app name out of an /api/app-identity payload. */
+function identityName(identity: unknown): string | null {
+  if (!identity || typeof identity !== 'object') return null;
+  const record = identity as Record<string, unknown>;
+  for (const key of ['app', 'name', 'appName']) {
+    if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+  }
+  return null;
+}
+
+/**
+ * MJ-072 companion readiness for the dispatch pulse pills. Loopback-only
+ * probes of both /api/app-identity endpoints; never throws.
+ */
+export async function GET(): Promise<Response> {
+  const [framecrop, fileconverter] = await Promise.all([
+    probeIdentity(frameCropBase()),
+    probeIdentity(fileConverterBase()),
+  ]);
+  return Response.json({
+    ok: true,
+    framecrop: { online: framecrop.online, name: identityName(framecrop.identity), port: 47823 },
+    fileconverter: { online: fileconverter.online, name: identityName(fileconverter.identity), port: 3301 },
+  });
+}
+
 export async function POST(request: Request): Promise<Response> {
   let body: Record<string, unknown>;
   try {

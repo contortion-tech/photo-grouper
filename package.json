@@ -8,7 +8,7 @@
     "build": "npm run prepare:compression-worker && next build --webpack && npm run verify:pwa",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx scripts/photo-edits.test.mjs && tsx scripts/product-features.test.mjs && tsx scripts/gallery.test.mjs && tsx scripts/layout-geometry.test.mjs && tsx scripts/bundles.test.mjs && tsx scripts/clustering.test.mjs && tsx scripts/handoff.test.mjs",
+    "test": "tsx scripts/photo-edits.test.mjs && tsx scripts/product-features.test.mjs && tsx scripts/gallery.test.mjs && tsx scripts/layout-geometry.test.mjs && tsx scripts/bundles.test.mjs && tsx scripts/clustering.test.mjs && tsx scripts/handoff.test.mjs && tsx scripts/snapping.test.mjs",
     "prepare:compression-worker": "node scripts/prepare-compression-worker.mjs",
     "verify:pwa": "node scripts/verify-pwa.mjs"
   },

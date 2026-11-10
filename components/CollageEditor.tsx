@@ -6,10 +6,16 @@ import {
     ArrowLeft, Download, Loader2, RotateCcw, Repeat2,
     LayoutGrid, Sliders, Wand2, Palette, Crop,
     RotateCw, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeftIcon, ArrowRightIcon,
-    Check, X, Hand, Send, UploadCloud,
+    Check, X, Hand, Send, UploadCloud, Magnet, Play, Zap,
 } from 'lucide-react';
 import { CollageTemplate, SlotPosition } from '@/utils/templates';
 import { getLayoutDividers, moveLayoutDivider, type LayoutDivider } from '@/utils/layoutGeometry';
+import {
+    snapDividerPosition,
+    SNAP_GUTTER_TOKENS,
+    type SnapGutterToken,
+    type SnapGuide,
+} from '@/utils/canvasSnapping';
 import {
     PhotoEdits,
     DEFAULT_EDITS,
@@ -71,6 +77,13 @@ const HANDOFF_ACTIONS: { target: HandoffTarget; label: string }[] = [
     { target: 'framecrop', label: 'Send to FrameCrop' },
 ];
 
+export interface CompanionStatus {
+    framecrop: { online: boolean; name: string | null; port: number };
+    fileconverter: { online: boolean; name: string | null; port: number };
+}
+
+const SNAP_GUTTER_ORDER: SnapGutterToken[] = ['hairline', 'compact', 'relaxed'];
+
 export default function CollageEditor({
     photos,
     templates,
@@ -105,6 +118,43 @@ export default function CollageEditor({
     const [swapSource, setSwapSource] = useState<string | null>(null);
     const previewRef = useRef<HTMLDivElement>(null);
     const [previewWidth, setPreviewWidth] = useState(PREVIEW_REFERENCE_WIDTH);
+
+    // ----- MJ-072 magnetic canvas snapping -----
+    const [snapEnabled, setSnapEnabled] = useState(true);
+    const [snapGutter, setSnapGutter] = useState<SnapGutterToken>('hairline');
+    const [activeSnap, setActiveSnap] = useState<{ guide: SnapGuide; start: number; end: number } | null>(null);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 's' && event.key !== 'S') return;
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
+            const target = event.target as HTMLElement | null;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+            setSnapEnabled((value) => !value);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    // ----- MJ-072 companion readiness pulses (:47823 / :3301) -----
+    const [companionStatus, setCompanionStatus] = useState<CompanionStatus | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const poll = async () => {
+            try {
+                const response = await fetch('/api/handoff');
+                const data = await response.json();
+                if (!cancelled && response.ok) setCompanionStatus(data);
+            } catch { /* companions offline is a normal state; pills stay dim */ }
+        };
+        poll();
+        const timer = window.setInterval(poll, 15000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, []);
 
     const availableTemplates = useMemo(
         () => templates.filter((t) => t.slots.length === photos.length),
@@ -219,6 +269,34 @@ export default function CollageEditor({
 
     const cancelSwap = useCallback(() => setSwapSource(null), []);
 
+    // ----- MJ-072 divider dragging with magnetic snapping -----
+    const handleDividerPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, divider: LayoutDivider) => {
+        const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
+        dividerDrag.current = { divider, slots: selectedTemplate.slots, bounds };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    }, [selectedTemplate.slots]);
+
+    const handleDividerPointerMove = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = dividerDrag.current;
+        if (!drag) return;
+        const raw = drag.divider.axis === 'x'
+            ? ((event.clientX - drag.bounds.left) / drag.bounds.width) * 100
+            : ((event.clientY - drag.bounds.top) / drag.bounds.height) * 100;
+        const canvasLengthPx = drag.divider.axis === 'x' ? drag.bounds.width : drag.bounds.height;
+        const snapped = snapDividerPosition(drag.slots, drag.divider, raw, canvasLengthPx, {
+            enabled: snapEnabled,
+            gutterToken: snapGutter,
+        });
+        setActiveSnap(snapped.guide ? { guide: snapped.guide, start: drag.divider.start, end: drag.divider.end } : null);
+        onResizeLayout({ ...selectedTemplate, slots: moveLayoutDivider(drag.slots, drag.divider, snapped.position) });
+    }, [snapEnabled, snapGutter, onResizeLayout, selectedTemplate]);
+
+    const handleDividerPointerEnd = useCallback(() => {
+        dividerDrag.current = null;
+        setActiveSnap(null);
+    }, []);
+
     useEffect(() => {
         const element = previewRef.current;
         if (!element || typeof ResizeObserver === 'undefined') return;
@@ -261,6 +339,28 @@ export default function CollageEditor({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => handleHandoff('framecrop')}
+                        disabled={handoffBusy !== null}
+                        title="Send to FrameCrop (:47823)"
+                        className="flex min-h-10 items-center gap-1.5 rounded-full border border-white/10 bg-slate-800 px-3 font-medium text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                        {handoffBusy === 'framecrop'
+                            ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                            : <Play className="h-4 w-4 text-slate-500" />}
+                        <span className="hidden lg:inline">FrameCrop</span>
+                    </button>
+                    <button
+                        onClick={() => handleHandoff('fileconverter')}
+                        disabled={handoffBusy !== null}
+                        title="Send to FCL (:3301)"
+                        className="flex min-h-10 items-center gap-1.5 rounded-full border border-white/10 bg-slate-800 px-3 font-medium text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                        {handoffBusy === 'fileconverter'
+                            ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                            : <Zap className="h-4 w-4 text-slate-500" />}
+                        <span className="hidden lg:inline">FCL</span>
+                    </button>
                     <div className="relative">
                         <button
                             onClick={() => setSendMenuOpen((open) => !open)}
@@ -273,6 +373,9 @@ export default function CollageEditor({
                         </button>
                         {sendMenuOpen && (
                             <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40">
+                                <div className="border-b border-white/10 px-4 py-2.5">
+                                    <CompanionPills status={companionStatus} />
+                                </div>
                                 {HANDOFF_ACTIONS.map((action) => (
                                     <button
                                         key={action.target}
@@ -354,15 +457,64 @@ export default function CollageEditor({
                                     />
                                 );
                             })}
-                            {resizeLayout && dividers.map((divider, index) => <button key={divider.id} className={`layout-divider layout-divider-${divider.axis}`} role="slider" aria-label={`Layout divider ${index + 1} ${divider.axis === 'x' ? 'vertical' : 'horizontal'}`} aria-orientation={divider.axis === 'x' ? 'horizontal' : 'vertical'} aria-valuemin={divider.min} aria-valuemax={divider.max} aria-valuenow={Math.round(divider.position)} style={divider.axis === 'x' ? { left: `${divider.position}%`, top: `${divider.start}%`, height: `${divider.end - divider.start}%` } : { top: `${divider.position}%`, left: `${divider.start}%`, width: `${divider.end - divider.start}%` }}
-                                onPointerDown={(event) => { const bounds = event.currentTarget.parentElement!.getBoundingClientRect(); dividerDrag.current = { divider, slots: selectedTemplate.slots, bounds }; event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); }}
-                                onPointerMove={(event) => { const drag = dividerDrag.current; if (!drag) return; const position = drag.divider.axis === 'x' ? (event.clientX - drag.bounds.left) / drag.bounds.width * 100 : (event.clientY - drag.bounds.top) / drag.bounds.height * 100; onResizeLayout({ ...selectedTemplate, slots: moveLayoutDivider(drag.slots, drag.divider, position) }); }}
-                                onPointerUp={() => { dividerDrag.current = null; }} onPointerCancel={() => { dividerDrag.current = null; }}
-                                onKeyDown={(event) => { const keys = divider.axis === 'x' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown']; if (!keys.includes(event.key)) return; event.preventDefault(); onResizeLayout({ ...selectedTemplate, slots: moveLayoutDivider(selectedTemplate.slots, divider, divider.position + (event.key === keys[0] ? -1 : 1)) }); }} />)}
+                            {resizeLayout && dividers.map((divider, index) => (
+                                <button
+                                    key={divider.id}
+                                    className={`layout-divider layout-divider-${divider.axis}`}
+                                    role="slider"
+                                    aria-label={`Layout divider ${index + 1} ${divider.axis === 'x' ? 'vertical' : 'horizontal'}`}
+                                    aria-orientation={divider.axis === 'x' ? 'horizontal' : 'vertical'}
+                                    aria-valuemin={divider.min}
+                                    aria-valuemax={divider.max}
+                                    aria-valuenow={Math.round(divider.position)}
+                                    style={divider.axis === 'x' ? { left: `${divider.position}%`, top: `${divider.start}%`, height: `${divider.end - divider.start}%` } : { top: `${divider.position}%`, left: `${divider.start}%`, width: `${divider.end - divider.start}%` }}
+                                    onPointerDown={(event) => handleDividerPointerDown(event, divider)}
+                                    onPointerMove={handleDividerPointerMove}
+                                    onPointerUp={handleDividerPointerEnd}
+                                    onPointerCancel={handleDividerPointerEnd}
+                                    onKeyDown={(event) => { const keys = divider.axis === 'x' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown']; if (!keys.includes(event.key)) return; event.preventDefault(); onResizeLayout({ ...selectedTemplate, slots: moveLayoutDivider(selectedTemplate.slots, divider, divider.position + (event.key === keys[0] ? -1 : 1)) }); }}
+                                />
+                            ))}
+                            {resizeLayout && snapEnabled && activeSnap && (
+                                <div
+                                    aria-hidden
+                                    className="pointer-events-none absolute z-20 bg-cyan-300/70 shadow-[0_0_6px_rgba(34,211,238,0.7)]"
+                                    style={activeSnap.guide.axis === 'x'
+                                        ? { left: `calc(${activeSnap.guide.position}% - 0.5px)`, top: `${activeSnap.start}%`, width: 1, height: `${activeSnap.end - activeSnap.start}%` }
+                                        : { top: `calc(${activeSnap.guide.position}% - 0.5px)`, left: `${activeSnap.start}%`, height: 1, width: `${activeSnap.end - activeSnap.start}%` }}
+                                />
+                            )}
                         </div>
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2 text-xs"><button className="rounded border border-slate-500 px-3 py-2" aria-pressed={resizeLayout} disabled={!dividers.length && !resizeLayout} onClick={() => setResizeLayout((old) => !old)}>{resizeLayout ? 'Done resizing' : 'Resize cells'}</button><button className="rounded border border-slate-500 px-3 py-2" onClick={() => { const original = templates.find((t) => t.id === selectedTemplate.id); if (original) onResizeLayout(original); }}>Reset cell sizes</button></div>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
+                        <button
+                            className={`flex items-center gap-1.5 rounded border px-3 py-2 transition ${snapEnabled ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200' : 'border-slate-500 text-slate-300'}`}
+                            aria-pressed={snapEnabled}
+                            title="Magnetic snapping (S)"
+                            onClick={() => setSnapEnabled((old) => !old)}
+                        >
+                            <Magnet className="h-3.5 w-3.5" />
+                            Snap: {snapEnabled ? 'ON' : 'OFF'}
+                        </button>
+                        {snapEnabled && (
+                            <span className="flex overflow-hidden rounded border border-slate-500" role="group" aria-label="Snap gutter">
+                                {SNAP_GUTTER_ORDER.map((token) => (
+                                    <button
+                                        key={token}
+                                        aria-pressed={snapGutter === token}
+                                        title={`${SNAP_GUTTER_TOKENS[token]}px gutter standoff`}
+                                        onClick={() => setSnapGutter(token)}
+                                        className={`px-2.5 py-2 first:rounded-l last:rounded-r transition ${snapGutter === token ? 'bg-cyan-400/15 text-cyan-200' : 'text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        {token}
+                                    </button>
+                                ))}
+                            </span>
+                        )}
+                        <button className="rounded border border-slate-500 px-3 py-2" aria-pressed={resizeLayout} disabled={!dividers.length && !resizeLayout} onClick={() => setResizeLayout((old) => !old)}>{resizeLayout ? 'Done resizing' : 'Resize cells'}</button>
+                        <button className="rounded border border-slate-500 px-3 py-2" onClick={() => { const original = templates.find((t) => t.id === selectedTemplate.id); if (original) onResizeLayout(original); }}>Reset cell sizes</button>
+                    </div>
                     {resizeLayout && <p className="mt-2 text-xs text-slate-300">Drag a divider grip or focus it and use arrow keys. Shared edges stay aligned.</p>}
                     <p className="mt-3 flex items-center gap-1.5 px-4 text-center text-[11px] text-slate-500">
                         <Hand className="h-3.5 w-3.5 shrink-0" />
@@ -413,12 +565,47 @@ export default function CollageEditor({
                                 onHandoff={handleHandoff}
                                 handoffBusy={handoffBusy}
                                 handoffToast={handoffToast}
+                                companionStatus={companionStatus}
                             />
                         )}
                         {tab === 'style' && <StyleTab style={collageStyle} onUpdate={onUpdateStyle} />}
                     </div>
                 </aside>
             </div>
+        </div>
+    );
+}
+
+/* ============================== Companion pulse pills ============================== */
+
+function CompanionPills({ status }: { status: CompanionStatus | null }) {
+    const pills = [
+        { key: 'framecrop' as const, label: 'FrameCrop' },
+        { key: 'fileconverter' as const, label: 'FCL' },
+    ];
+    return (
+        <div className="flex flex-wrap items-center gap-2">
+            {pills.map((pill) => {
+                const info = status?.[pill.key];
+                const online = Boolean(info?.online);
+                return (
+                    <span
+                        key={pill.key}
+                        title={info
+                            ? `${pill.label} :${info.port} — ${online ? `online${info.name ? ` (${info.name})` : ''}` : 'offline'}`
+                            : `${pill.label} — checking…`}
+                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            online
+                                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                : 'border-slate-600/60 bg-slate-800/60 text-slate-400'
+                        }`}
+                    >
+                        <span className={`h-2 w-2 rounded-full ${online ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`} />
+                        {pill.label}
+                        <span className="text-slate-500">:{info?.port ?? ''}</span>
+                    </span>
+                );
+            })}
         </div>
     );
 }
@@ -1014,7 +1201,7 @@ function FiltersTab({
 
 function FormatTab({
     activeRatio, onSelect, exportOptions, onUpdateExportOptions, comparisonLabels, onUpdateComparisonLabels,
-    onHandoff, handoffBusy, handoffToast,
+    onHandoff, handoffBusy, handoffToast, companionStatus,
 }: {
     activeRatio: number | null;
     onSelect: (ratio: number | null) => void;
@@ -1025,6 +1212,7 @@ function FormatTab({
     onHandoff: (target: HandoffTarget) => void;
     handoffBusy: HandoffTarget | null;
     handoffToast: { ok: boolean; message: string } | null;
+    companionStatus: CompanionStatus | null;
 }) {
     return (
         <div className="space-y-6 px-4 py-3">
@@ -1090,6 +1278,19 @@ function FormatTab({
                     ))}
                 </div>
                 <p className="mt-2 text-[11px] leading-4 text-slate-500">Longest edge of the final image. Higher resolutions use more memory.</p>
+                <div className="mt-3 grid grid-cols-3 gap-2" role="group" aria-label="Detail multiplier">
+                    {([1, 2, 3] as const).map((multiplier) => (
+                        <button
+                            key={multiplier}
+                            onClick={() => onUpdateExportOptions({ exportMultiplier: multiplier })}
+                            aria-pressed={(exportOptions.exportMultiplier ?? 1) === multiplier}
+                            className={`rounded-xl border px-2 py-2 text-xs font-medium transition ${(exportOptions.exportMultiplier ?? 1) === multiplier ? 'border-blue-500 bg-blue-500/15 text-blue-300' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                        >
+                            {multiplier === 1 ? '1x standard' : `${multiplier}x DPI`}
+                        </button>
+                    ))}
+                </div>
+                <p className="mt-1.5 text-[11px] leading-4 text-slate-500">Poster detail multiplier. Clamps automatically if the canvas exceeds safe raster size.</p>
             </div>
 
             <div className="border-t border-slate-700 pt-5">
@@ -1130,15 +1331,16 @@ function FormatTab({
             </div>
 
             <div className="border-t border-slate-800 pt-5">
-                <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Media triad handoff</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Media triad dispatch</p>
                 <div className="space-y-2 rounded-2xl border border-white/10 bg-slate-900 p-3">
+                    <CompanionPills status={companionStatus} />
                     <p className="text-[11px] leading-4 text-slate-500">
                         Render the current collage and dispatch it to the local media triad.
                     </p>
                     {[
                         { target: 'uploadqueue' as const, label: 'Send to Upload Queue', icon: <UploadCloud className="h-4 w-4" /> },
-                        { target: 'fileconverter' as const, label: 'Send to File Converter Light', icon: <Wand2 className="h-4 w-4" /> },
-                        { target: 'framecrop' as const, label: 'Send to FrameCrop', icon: <Crop className="h-4 w-4" /> },
+                        { target: 'fileconverter' as const, label: '⚡ Send to FCL', icon: <Zap className="h-4 w-4" /> },
+                        { target: 'framecrop' as const, label: '▶ Send to FrameCrop', icon: <Play className="h-4 w-4" /> },
                     ].map((action) => (
                         <button
                             key={action.target}
