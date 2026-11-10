@@ -19,6 +19,14 @@ export interface CollageTemplate {
     style?: 'clean' | 'polaroid' | 'rounded' | 'artistic';
     /** Fold editorial tokens: hairline divider rendering for Fold presets. */
     foldTokens?: { gap: number };
+    /** MJ-072 poster presets: exact rasterization size (and DPI where print-meaningful). */
+    canvasResolution?: CanvasResolution;
+}
+
+export interface CanvasResolution {
+    width: number;
+    height: number;
+    dpi?: number;
 }
 
 // Template definitions - organized by photo count
@@ -788,6 +796,59 @@ TEMPLATES.push({
         { id: 's4', x: 75, y: 0, width: 25, height: 100 },
     ],
 });
+
+// ==================== POSTER / PUBLICATION PRESETS (MJ-072) ====================
+
+/**
+ * High-DPI editorial poster templates. `aspectRatio` is derived from
+ * `canvasResolution` so the ratio and the rasterization size can never drift,
+ * and `resolveExportDimensions` rasterizes at the exact canvas size when no
+ * aspect override is set.
+ */
+export const POSTER_TEMPLATES: CollageTemplate[] = [
+    {
+        id: 'editorial-a4-portrait',
+        name: 'A4 Editorial 300 DPI',
+        aspectRatio: 2480 / 3508,
+        style: 'clean',
+        foldTokens: FOLD_TOKENS,
+        canvasResolution: { width: 2480, height: 3508, dpi: 300 },
+        slots: [
+            { id: 's1', x: 0, y: 0, width: 100, height: 57 },
+            { id: 's2', x: 0, y: 57, width: 50, height: 43 },
+            { id: 's3', x: 50, y: 57, width: 50, height: 43 },
+        ],
+    },
+    {
+        id: 'editorial-spread-4k',
+        name: '4K Editorial Spread',
+        aspectRatio: 16 / 9,
+        style: 'clean',
+        foldTokens: FOLD_TOKENS,
+        canvasResolution: { width: 3840, height: 2160 },
+        slots: [
+            { id: 's1', x: 0, y: 0, width: 38, height: 100 },
+            { id: 's2', x: 38, y: 0, width: 62, height: 33.33 },
+            { id: 's3', x: 38, y: 33.33, width: 62, height: 33.33 },
+            { id: 's4', x: 38, y: 66.66, width: 62, height: 33.34 },
+        ],
+    },
+    {
+        id: 'social-master-square',
+        name: 'Social Master 2048',
+        aspectRatio: 1,
+        style: 'clean',
+        foldTokens: FOLD_TOKENS,
+        canvasResolution: { width: 2048, height: 2048 },
+        slots: [
+            { id: 's1', x: 0, y: 0, width: 50, height: 50 },
+            { id: 's2', x: 50, y: 0, width: 50, height: 50 },
+            { id: 's3', x: 0, y: 50, width: 50, height: 50 },
+            { id: 's4', x: 50, y: 50, width: 50, height: 50 },
+        ],
+    },
+];
+TEMPLATES.push(...POSTER_TEMPLATES);
 
 /**
  * Get the best default template for a given photo count

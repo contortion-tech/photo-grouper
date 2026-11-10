@@ -24,5 +24,7 @@
 ## Verification & Status
 
 - **Stack**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4 PWA.
-- **Test Baseline**: 5/5 test suites passing (`bundles`, `gallery`, `layout-geometry`, `photo-edits`, `product-features`).
-- **Build**: `tsc --noEmit` exits 0; `npm run build` verified clean.
+- **Test Baseline**: 8/8 test suites passing exit 0 (`bundles`, `gallery`, `layout-geometry`, `photo-edits`, `product-features`, `clustering`, `handoff`, `snapping`).
+- **Build**: `tsc --noEmit` exits 0; `npm run build` and `verify:pwa` clean.
+- **Clustering & Collage Engine (MJ-030)**: Time-delta clustering with adjustable burst/scene windows in `utils/clustering.ts`; high-DPI canvas collage export with custom shadow tokens in `utils/collageGenerator.ts`.
+- **Canvas Studio (MJ-072)**: Pure snapping engine in `utils/canvasSnapping.ts` — layout-divider drags magnetically engage canvas edges/center axes and neighbor slot edges (8px radius; hairline 1px / compact 8px / relaxed 16px gutter standoffs, approach-direction aware, 2-decimal rounding). Poster templates (`POSTER_TEMPLATES`) carry exact `canvasResolution`; `resolveExportDimensions` in `collageGenerator.ts` rasterizes poster canvases precisely and applies `exportMultiplier` 1x/2x/3x under a 64 MP / 12288-edge memory guard. `GET /api/handoff` returns FrameCrop :47823 + FCL :3301 readiness for the dispatch pulse pills; header ▶/⚡ buttons are 1-click dispatches. FrameCrop has no HTTP intake — dispatch stages to `UpQueue_Intake` + `.upqueue.json` sidecar (verified in FrameCrop Swift sources).
