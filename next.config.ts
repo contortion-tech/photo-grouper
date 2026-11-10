@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' blob: data:",
               "worker-src 'self' blob:",
-              "connect-src 'self' blob:",
+              "connect-src 'self' blob: http://127.0.0.1:* http://localhost:*",
               "font-src 'self' data:",
               "manifest-src 'self'",
               "object-src 'none'",

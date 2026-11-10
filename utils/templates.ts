@@ -17,6 +17,8 @@ export interface CollageTemplate {
     slots: SlotPosition[];
     aspectRatio: number; // width / height
     style?: 'clean' | 'polaroid' | 'rounded' | 'artistic';
+    /** Fold editorial tokens: hairline divider rendering for Fold presets. */
+    foldTokens?: { gap: number };
 }
 
 // Template definitions - organized by photo count
@@ -707,6 +709,85 @@ TEMPLATES.push(...EDITORIAL_TEMPLATES);
 export function getTemplatesForPhotoCount(count: number): CollageTemplate[] {
     return TEMPLATES.filter((t) => t.slots.length === count);
 }
+
+// ==================== FOLD EDITORIAL PRESETS (MJ-062) ====================
+
+/** Fold hairline divider token (px at the 448px editor reference width). */
+export const FOLD_HAIRLINE_GAP = 2;
+
+const FOLD_TOKENS = { gap: FOLD_HAIRLINE_GAP };
+
+/** Fold quad: clean symmetric grid with hairline dividers, 1:1 canvas. */
+TEMPLATES.push({
+    id: '4-grid-fold',
+    name: 'Fold Quad',
+    aspectRatio: 1,
+    style: 'clean',
+    foldTokens: FOLD_TOKENS,
+    slots: [
+        { id: 's1', x: 0, y: 0, width: 50, height: 50 },
+        { id: 's2', x: 50, y: 0, width: 50, height: 50 },
+        { id: 's3', x: 0, y: 50, width: 50, height: 50 },
+        { id: 's4', x: 50, y: 50, width: 50, height: 50 },
+    ],
+});
+
+/** Fold hero story, 4:5 portrait: dominant hero (62%) + two stacked companions (38%). */
+TEMPLATES.push({
+    id: '3-hero-story',
+    name: 'Hero Story',
+    aspectRatio: 0.8,
+    style: 'clean',
+    foldTokens: FOLD_TOKENS,
+    slots: [
+        { id: 's1', x: 0, y: 0, width: 62, height: 100 },
+        { id: 's2', x: 62, y: 0, width: 38, height: 50 },
+        { id: 's3', x: 62, y: 50, width: 38, height: 50 },
+    ],
+});
+
+/** Fold hero story, 16:9 landscape variant of the hero story geometry. */
+TEMPLATES.push({
+    id: '3-hero-story-wide',
+    name: 'Hero Story Wide',
+    aspectRatio: 16 / 9,
+    style: 'clean',
+    foldTokens: FOLD_TOKENS,
+    slots: [
+        { id: 's1', x: 0, y: 0, width: 62, height: 100 },
+        { id: 's2', x: 62, y: 0, width: 38, height: 50 },
+        { id: 's3', x: 62, y: 50, width: 38, height: 50 },
+    ],
+});
+
+/** Fold panoramic strip, 2.39:1 cinematic: three equal widescreen slots. */
+TEMPLATES.push({
+    id: 'panoramic-strip',
+    name: 'Panoramic Strip',
+    aspectRatio: 2.39,
+    style: 'clean',
+    foldTokens: FOLD_TOKENS,
+    slots: [
+        { id: 's1', x: 0, y: 0, width: 33.33, height: 100 },
+        { id: 's2', x: 33.33, y: 0, width: 33.33, height: 100 },
+        { id: 's3', x: 66.66, y: 0, width: 33.34, height: 100 },
+    ],
+});
+
+/** Fold panoramic quad strip, 16:9: four widescreen slots for hero banners. */
+TEMPLATES.push({
+    id: 'panoramic-strip-quad',
+    name: 'Panoramic Quad',
+    aspectRatio: 16 / 9,
+    style: 'clean',
+    foldTokens: FOLD_TOKENS,
+    slots: [
+        { id: 's1', x: 0, y: 0, width: 25, height: 100 },
+        { id: 's2', x: 25, y: 0, width: 25, height: 100 },
+        { id: 's3', x: 50, y: 0, width: 25, height: 100 },
+        { id: 's4', x: 75, y: 0, width: 25, height: 100 },
+    ],
+});
 
 /**
  * Get the best default template for a given photo count

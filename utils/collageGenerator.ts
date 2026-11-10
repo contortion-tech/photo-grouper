@@ -252,7 +252,12 @@ export async function generateCollage(
   const { width: canvasWidth, height: canvasHeight } = getExportDimensions(aspect, exportOptions.width);
 
   const pxScale = canvasWidth / REFERENCE_WIDTH;
-  const gapPx = collageStyle.gap * pxScale;
+  // Fold presets carry a hairline divider token; honored while the user keeps
+  // the default gap so a manual gap choice always wins.
+  const effectiveGap = template.foldTokens && collageStyle.gap === DEFAULT_STYLE.gap
+    ? template.foldTokens.gap
+    : collageStyle.gap;
+  const gapPx = effectiveGap * pxScale;
   const paddingPx = collageStyle.padding * pxScale;
   const cornerPx = collageStyle.cornerRadius * pxScale;
 

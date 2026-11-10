@@ -6,7 +6,7 @@ import {
     ArrowLeft, Download, Loader2, RotateCcw, Repeat2,
     LayoutGrid, Sliders, Wand2, Palette, Crop,
     RotateCw, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeftIcon, ArrowRightIcon,
-    Check, X, Hand,
+    Check, X, Hand, Send, UploadCloud,
 } from 'lucide-react';
 import { CollageTemplate, SlotPosition } from '@/utils/templates';
 import { getLayoutDividers, moveLayoutDivider, type LayoutDivider } from '@/utils/layoutGeometry';
@@ -30,6 +30,7 @@ import {
 } from '@/utils/photoEdits';
 
 import { PhotoData } from '@/types/photo';
+import { generateCollage } from '@/utils/collageGenerator';
 import type { ComparisonLabels, ExportOptions } from '@/utils/collageGenerator';
 
 interface CollageEditorProps {
@@ -62,6 +63,13 @@ interface CollageEditorProps {
 type Tab = 'layouts' | 'adjust' | 'filters' | 'format' | 'style';
 const TAB_ORDER: Tab[] = ['layouts', 'adjust', 'filters', 'format', 'style'];
 const PREVIEW_REFERENCE_WIDTH = 448;
+
+export type HandoffTarget = 'uploadqueue' | 'fileconverter' | 'framecrop';
+const HANDOFF_ACTIONS: { target: HandoffTarget; label: string }[] = [
+    { target: 'uploadqueue', label: 'Send to Upload Queue' },
+    { target: 'fileconverter', label: 'Send to File Converter Light' },
+    { target: 'framecrop', label: 'Send to FrameCrop' },
+];
 
 export default function CollageEditor({
     photos,
@@ -102,6 +110,72 @@ export default function CollageEditor({
         () => templates.filter((t) => t.slots.length === photos.length),
         [templates, photos.length]
     );
+
+    // ----- MJ-062 media triad handoff -----
+    const [handoffBusy, setHandoffBusy] = useState<HandoffTarget | null>(null);
+    const [handoffToast, setHandoffToast] = useState<{ ok: boolean; message: string } | null>(null);
+    const [sendMenuOpen, setSendMenuOpen] = useState(false);
+
+    useEffect(() => {
+        if (!handoffToast) return;
+        const timer = window.setTimeout(() => setHandoffToast(null), 4200);
+        return () => window.clearTimeout(timer);
+    }, [handoffToast]);
+
+    const handleHandoff = useCallback(async (target: HandoffTarget) => {
+        setSendMenuOpen(false);
+        setHandoffBusy(target);
+        setHandoffToast(null);
+        try {
+            const photoMap = new Map<string, PhotoData>();
+            for (const slot of selectedTemplate.slots) {
+                const index = photoAssignments.get(slot.id);
+                if (index !== undefined && photos[index]) photoMap.set(slot.id, photos[index]);
+            }
+            const url = await generateCollage(
+                selectedTemplate,
+                photoMap,
+                slotEdits,
+                collageStyle,
+                outputAspectRatio,
+                exportOptions,
+                comparisonLabels,
+            );
+            let dataUri: string;
+            try {
+                const blob = await (await fetch(url)).blob();
+                dataUri = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result));
+                    reader.onerror = () => reject(new Error('Collage encoding failed'));
+                    reader.readAsDataURL(blob);
+                });
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+            const response = await fetch('/api/handoff', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target,
+                    imageData: dataUri,
+                    fileName: `photo-collage-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.png`,
+                    title: `PhotoGrouper collage · ${selectedTemplate.name}`,
+                }),
+            });
+            const result = await response.json().catch(() => ({ ok: false, error: 'Handoff service error' }));
+            setHandoffToast({
+                ok: Boolean(result.ok),
+                message: target === 'uploadqueue' && result.ok
+                    ? 'Dispatched to Upload Queue!'
+                    : String(result.notice || result.error || (result.ok ? 'Dispatched!' : 'Handoff failed')),
+            });
+        } catch (error) {
+            setHandoffToast({ ok: false, message: error instanceof Error ? error.message : 'Handoff failed' });
+        } finally {
+            setHandoffBusy(null);
+        }
+    }, [selectedTemplate, photoAssignments, photos, slotEdits, collageStyle, outputAspectRatio, exportOptions, comparisonLabels]);
 
     const aspectRatio = outputAspectRatio ?? selectedTemplate.aspectRatio;
     const styleScale = previewWidth / PREVIEW_REFERENCE_WIDTH;
@@ -186,14 +260,45 @@ export default function CollageEditor({
                     <p className="text-[11px] text-slate-500">{photos.length} photos · {availableTemplates.length} layouts</p>
                 </div>
 
-                <button
-                    onClick={onSave}
-                    disabled={isSaving}
-                    className="flex min-h-10 items-center gap-2 rounded-full bg-blue-500 px-5 font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
-                >
-                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                    <span>{isSaving ? 'Saving...' : 'Save'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <button
+                            onClick={() => setSendMenuOpen((open) => !open)}
+                            aria-expanded={sendMenuOpen}
+                            aria-haspopup="menu"
+                            className="flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-slate-800 px-4 font-medium text-slate-200 transition hover:border-slate-500 hover:text-white"
+                        >
+                            <Send className="h-4 w-4" />
+                            <span className="hidden sm:inline">Send to…</span>
+                        </button>
+                        {sendMenuOpen && (
+                            <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40">
+                                {HANDOFF_ACTIONS.map((action) => (
+                                    <button
+                                        key={action.target}
+                                        role="menuitem"
+                                        disabled={handoffBusy !== null}
+                                        onClick={() => handleHandoff(action.target)}
+                                        className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+                                    >
+                                        {handoffBusy === action.target
+                                            ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                                            : <Send className="h-4 w-4 text-slate-500" />}
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <button
+                        onClick={onSave}
+                        disabled={isSaving}
+                        className="flex min-h-10 items-center gap-2 rounded-full bg-blue-500 px-5 font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
+                    >
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        <span>{isSaving ? 'Saving...' : 'Save'}</span>
+                    </button>
+                </div>
             </header>
 
             {swapSource && (
@@ -305,6 +410,9 @@ export default function CollageEditor({
                                 onUpdateExportOptions={onUpdateExportOptions}
                                 comparisonLabels={comparisonLabels}
                                 onUpdateComparisonLabels={onUpdateComparisonLabels}
+                                onHandoff={handleHandoff}
+                                handoffBusy={handoffBusy}
+                                handoffToast={handoffToast}
                             />
                         )}
                         {tab === 'style' && <StyleTab style={collageStyle} onUpdate={onUpdateStyle} />}
@@ -906,6 +1014,7 @@ function FiltersTab({
 
 function FormatTab({
     activeRatio, onSelect, exportOptions, onUpdateExportOptions, comparisonLabels, onUpdateComparisonLabels,
+    onHandoff, handoffBusy, handoffToast,
 }: {
     activeRatio: number | null;
     onSelect: (ratio: number | null) => void;
@@ -913,6 +1022,9 @@ function FormatTab({
     onUpdateExportOptions: (updates: Partial<ExportOptions>) => void;
     comparisonLabels: ComparisonLabels;
     onUpdateComparisonLabels: (updates: Partial<ComparisonLabels>) => void;
+    onHandoff: (target: HandoffTarget) => void;
+    handoffBusy: HandoffTarget | null;
+    handoffToast: { ok: boolean; message: string } | null;
 }) {
     return (
         <div className="space-y-6 px-4 py-3">
@@ -1015,6 +1127,40 @@ function FormatTab({
                         </label>
                     </div>
                 )}
+            </div>
+
+            <div className="border-t border-slate-800 pt-5">
+                <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Media triad handoff</p>
+                <div className="space-y-2 rounded-2xl border border-white/10 bg-slate-900 p-3">
+                    <p className="text-[11px] leading-4 text-slate-500">
+                        Render the current collage and dispatch it to the local media triad.
+                    </p>
+                    {[
+                        { target: 'uploadqueue' as const, label: 'Send to Upload Queue', icon: <UploadCloud className="h-4 w-4" /> },
+                        { target: 'fileconverter' as const, label: 'Send to File Converter Light', icon: <Wand2 className="h-4 w-4" /> },
+                        { target: 'framecrop' as const, label: 'Send to FrameCrop', icon: <Crop className="h-4 w-4" /> },
+                    ].map((action) => (
+                        <button
+                            key={action.target}
+                            onClick={() => onHandoff(action.target)}
+                            disabled={handoffBusy !== null}
+                            className="flex w-full items-center gap-2.5 rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-left text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50"
+                        >
+                            {handoffBusy === action.target
+                                ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                                : <span className="text-slate-500">{action.icon}</span>}
+                            {action.label}
+                        </button>
+                    ))}
+                    {handoffToast && (
+                        <p
+                            role="status"
+                            className={`rounded-lg px-3 py-2 text-[11px] font-medium ${handoffToast.ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}
+                        >
+                            {handoffToast.message}
+                        </p>
+                    )}
+                </div>
             </div>
         </div>
     );
