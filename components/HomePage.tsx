@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Images, ShieldCheck, Sparkles, WifiOff } from 'lucide-react';
 import type { WorkflowConfig } from '@/utils/workflows';
+import { VERSION_TICKER } from '@/utils/versionTicker';
 
 interface HomePageProps {
     onSelectPhotos: () => void;
@@ -25,7 +26,15 @@ export default function HomePage({ onSelectPhotos, workflow }: HomePageProps) {
                 <header className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-slate-800">
                         <Image src="/icon-rounded.svg" alt="" width={32} height={32} priority />
-                        Photo Grouper
+                        <span>
+                            Photo Grouper
+                            <span
+                                className="block font-mono text-[10px] font-normal tracking-normal text-slate-400 select-none"
+                                title="Version · build · commit"
+                            >
+                                {VERSION_TICKER}
+                            </span>
+                        </span>
                     </div>
                     <Link
                         href="/privacy"
@@ -93,6 +102,10 @@ export default function HomePage({ onSelectPhotos, workflow }: HomePageProps) {
                         </div>
                     ))}
                 </div>
+
+                <footer className="mt-4 border-t border-slate-200/80 pt-3 text-center font-mono text-[10px] text-slate-400 select-none">
+                    {VERSION_TICKER}
+                </footer>
             </div>
         </main>
     );

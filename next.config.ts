@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
+import { execFileSync } from "child_process";
 import withPWAInit from "@ducanh2912/next-pwa";
+
+// MJ-104: build provenance for the in-app version ticker. Null when git is
+// unavailable so the ticker degrades to version-only.
+function git(args: string[]): string | null {
+  try {
+    return execFileSync("git", ["-C", process.cwd(), ...args], { timeout: 5000 }).toString().trim();
+  } catch {
+    return null;
+  }
+}
+
+const NEXT_BUILD_GIT_SHA = git(["rev-parse", "--short", "HEAD"]);
+const NEXT_BUILD_NUMBER = git(["rev-list", "--count", "HEAD"]);
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -13,6 +27,10 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: {},
+  env: {
+    NEXT_BUILD_GIT_SHA,
+    NEXT_BUILD_NUMBER,
+  },
   async headers() {
     return [
       {
