@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>local.homedev.photo-grouper.server</string>
+<key>ProgramArguments</key><array>
+<string>/usr/local/bin/node</string><string>/usr/local/lib/node_modules/npm/bin/npm-cli.js</string>
+<string>run</string><string>dev</string><string>--</string>
+<string>--hostname</string><string>127.0.0.1</string><string>--port</string><string>53492</string>
+</array>
+<key>WorkingDirectory</key><string>/Users/joakimthomter/Desktop/10_SYSTEMS/20_PROJECTS/tools/photo-grouper</string>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+<key>StandardOutPath</key><string>/Users/joakimthomter/Library/Logs/Photo Grouper/server.log</string>
+<key>StandardErrorPath</key><string>/Users/joakimthomter/Library/Logs/Photo Grouper/server.log</string>
+</dict></plist>
