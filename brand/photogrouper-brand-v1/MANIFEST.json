@@ -1,0 +1,22 @@
+[
+  {"path": "masthead/v1-nine-frame.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C"], "mode": "light", "kind": "masthead"},
+  {"path": "masthead/v1-nine-frame-dark.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C"], "mode": "dark", "kind": "masthead"},
+  {"path": "masthead/v2-tilted-pair.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C", "#6FA98C"], "mode": "light", "kind": "masthead"},
+  {"path": "masthead/v2-tilted-pair-dark.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C", "#6FA98C"], "mode": "dark", "kind": "masthead"},
+  {"path": "masthead/v3-photo-rail.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C", "#6FA98C", "#5C93C9"], "mode": "light", "kind": "masthead"},
+  {"path": "masthead/v3-photo-rail-dark.svg", "viewBox": "0 0 640 96", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C", "#6FA98C", "#5C93C9"], "mode": "dark", "kind": "masthead"},
+  {"path": "glyph/header-glyph.svg", "viewBox": "0 0 24 24", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "glyph"},
+  {"path": "tab/home.svg", "viewBox": "0 0 20 20", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "tab"},
+  {"path": "tab/library.svg", "viewBox": "0 0 20 20", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "tab"},
+  {"path": "tab/editor.svg", "viewBox": "0 0 20 20", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "tab"},
+  {"path": "tab/bundle.svg", "viewBox": "0 0 20 20", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "tab"},
+  {"path": "tab/settings.svg", "viewBox": "0 0 20 20", "tokensUsed": ["#2E3440"], "mode": "single-color", "kind": "tab"},
+  {"path": "empty/empty_library.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C"], "mode": "light", "kind": "empty-state"},
+  {"path": "empty/empty_library_dark.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C"], "mode": "dark", "kind": "empty-state"},
+  {"path": "empty/empty_selection.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C"], "mode": "light", "kind": "empty-state"},
+  {"path": "empty/empty_selection_dark.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C"], "mode": "dark", "kind": "empty-state"},
+  {"path": "empty/empty_bundle.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#FAFAF7", "#FFFFFF", "#E3E1DA", "#F0685C"], "mode": "light", "kind": "empty-state"},
+  {"path": "empty/empty_bundle_dark.svg", "viewBox": "0 0 320 200", "tokensUsed": ["#22252B", "#2C3038", "#F5F4EF", "#F0685C"], "mode": "dark", "kind": "empty-state"},
+  {"path": "preview.html", "viewBox": null, "tokensUsed": [], "mode": "preview", "kind": "preview"},
+  {"path": "INSTALLATION_GUIDE.md", "viewBox": null, "tokensUsed": [], "mode": "docs", "kind": "guide"}
+]

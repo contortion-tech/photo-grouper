@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 96" role="img" aria-label="Photo Grouper masthead v1 dark">
+  <rect width="640" height="96" rx="14" fill="#22252B"/>
+  <rect x="8" y="8" width="624" height="80" rx="12" fill="#2C3038" stroke="#F5F4EF" stroke-opacity="0.22" stroke-width="1"/>
+  <rect x="552" y="28" width="40" height="40" rx="10" fill="none" stroke="#F5F4EF" stroke-opacity="0.28" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <circle cx="572" cy="48" r="4" fill="#F0685C"/>
+  <rect x="28" y="19" width="26" height="26" rx="7" fill="#22252B" stroke="#F5F4EF" stroke-opacity="0.32" stroke-width="1"/>
+  <rect x="28" y="51" width="26" height="26" rx="7" fill="#22252B" stroke="#F5F4EF" stroke-opacity="0.32" stroke-width="1"/>
+  <rect x="60" y="51" width="26" height="26" rx="7" fill="#22252B" stroke="#F5F4EF" stroke-opacity="0.32" stroke-width="1"/>
+  <g transform="rotate(7 73 32)">
+    <rect x="62" y="21" width="26" height="26" rx="7" fill="#22252B"/>
+    <rect x="60" y="19" width="26" height="26" rx="7" fill="#F0685C" stroke="#2C3038" stroke-width="1"/>
+  </g>
+</svg>

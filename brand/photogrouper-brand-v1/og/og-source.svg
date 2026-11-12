@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Photo Grouper Open Graph image — Nine Frame featured, light styling">
+  <rect width="1200" height="630" fill="#FAFAF7"/>
+  <rect x="24" y="24" width="1152" height="582" rx="28" fill="none" stroke="#E3E1DA" stroke-width="2"/>
+  <rect x="160" y="83" width="220" height="220" rx="40" fill="#FFFFFF" stroke="#E3E1DA" stroke-width="2"/>
+  <rect x="404" y="83" width="220" height="220" rx="40" fill="#FFFFFF" stroke="#E3E1DA" stroke-width="2"/>
+  <rect x="160" y="327" width="220" height="220" rx="40" fill="#FFFFFF" stroke="#E3E1DA" stroke-width="2"/>
+  <g transform="rotate(7 514 437)">
+    <rect x="408" y="331" width="220" height="220" rx="40" fill="#E3E1DA"/>
+    <rect x="396" y="319" width="220" height="220" rx="40" fill="#F0685C"/>
+  </g>
+  <rect x="780" y="83" width="220" height="220" rx="40" fill="none" stroke="#E3E1DA" stroke-width="2" stroke-dasharray="10 10"/>
+  <rect x="780" y="327" width="220" height="220" rx="40" fill="none" stroke="#E3E1DA" stroke-width="2" stroke-dasharray="10 10"/>
+  <circle cx="1064" cy="437" r="18" fill="#F0685C"/>
+  <rect x="1024" y="83" width="80" height="220" rx="20" fill="#FFFFFF" stroke="#E3E1DA" stroke-width="2" transform="rotate(7 1064 193)"/>
+</svg>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>photogrouper-brand-v1 — contact sheet</title>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; margin: 24px; color: #2E3440; }
+  h1 { font-size: 18px; }
+  p.note { font-size: 13px; max-width: 720px; }
+  table { border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #d0d0c8; padding: 10px; vertical-align: middle; }
+  th { font-size: 12px; text-align: left; }
+  td.light { background: #FAFAF7; }
+  td.dark { background: #22252B; }
+  td.path { font-family: monospace; font-size: 11px; }
+  img { display: block; }
+</style>
+</head>
+<body>
+<h1>Photo Grouper — brand asset contact sheet (SVG only, 1x)</h1>
+<p class="note">Every SVG rendered at 1x on paper-base #FAFAF7 (left) and night-base #22252B (right).
+Single-color glyph and tab icons are authored in ink-soft #2E3440 for light surfaces;
+they are template-style and recolored at runtime on dark surfaces, so they appear
+low-contrast in the dark column by design. PNG rendering is deferred to the post-gate
+mechanical step.</p>
+<table>
+  <tr><th>Asset</th><th>Light (paper-base)</th><th>Dark (night-base)</th></tr>
+  <tr><td class="path">masthead/v1-nine-frame.svg</td>
+    <td class="light"><img src="masthead/v1-nine-frame.svg" width="640" height="96" alt=""></td>
+    <td class="dark"><img src="masthead/v1-nine-frame-dark.svg" width="640" height="96" alt=""></td></tr>
+  <tr><td class="path">masthead/v2-tilted-pair.svg</td>
+    <td class="light"><img src="masthead/v2-tilted-pair.svg" width="640" height="96" alt=""></td>
+    <td class="dark"><img src="masthead/v2-tilted-pair-dark.svg" width="640" height="96" alt=""></td></tr>
+  <tr><td class="path">masthead/v3-photo-rail.svg</td>
+    <td class="light"><img src="masthead/v3-photo-rail.svg" width="640" height="96" alt=""></td>
+    <td class="dark"><img src="masthead/v3-photo-rail-dark.svg" width="640" height="96" alt=""></td></tr>
+  <tr><td class="path">glyph/header-glyph.svg (24×24)</td>
+    <td class="light"><img src="glyph/header-glyph.svg" width="24" height="24" alt=""></td>
+    <td class="dark"><img src="glyph/header-glyph.svg" width="24" height="24" alt=""></td></tr>
+  <tr><td class="path">tab/home.svg · library · editor · bundle · settings (20×20)</td>
+    <td class="light">
+      <img src="tab/home.svg" width="20" height="20" alt="">
+      <img src="tab/library.svg" width="20" height="20" alt="">
+      <img src="tab/editor.svg" width="20" height="20" alt="">
+      <img src="tab/bundle.svg" width="20" height="20" alt="">
+      <img src="tab/settings.svg" width="20" height="20" alt="">
+    </td>
+    <td class="dark">
+      <img src="tab/home.svg" width="20" height="20" alt="">
+      <img src="tab/library.svg" width="20" height="20" alt="">
+      <img src="tab/editor.svg" width="20" height="20" alt="">
+      <img src="tab/bundle.svg" width="20" height="20" alt="">
+      <img src="tab/settings.svg" width="20" height="20" alt="">
+    </td></tr>
+  <tr><td class="path">empty/empty_library.svg (320×200)</td>
+    <td class="light"><img src="empty/empty_library.svg" width="320" height="200" alt=""></td>
+    <td class="dark"><img src="empty/empty_library_dark.svg" width="320" height="200" alt=""></td></tr>
+  <tr><td class="path">empty/empty_selection.svg (320×200)</td>
+    <td class="light"><img src="empty/empty_selection.svg" width="320" height="200" alt=""></td>
+    <td class="dark"><img src="empty/empty_selection_dark.svg" width="320" height="200" alt=""></td></tr>
+  <tr><td class="path">empty/empty_bundle.svg (320×200)</td>
+    <td class="light"><img src="empty/empty_bundle.svg" width="320" height="200" alt=""></td>
+    <td class="dark"><img src="empty/empty_bundle_dark.svg" width="320" height="200" alt=""></td></tr>
+</table>
+</body>
+</html>

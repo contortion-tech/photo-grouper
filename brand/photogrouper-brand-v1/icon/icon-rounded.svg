@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Photo Grouper rounded header icon — Nine Frame">
+  <rect width="64" height="64" rx="14" fill="#22252B"/>
+  <rect x="14" y="14" width="16" height="16" rx="5" fill="#F5F4EF"/>
+  <rect x="34" y="14" width="16" height="16" rx="5" fill="#F5F4EF"/>
+  <rect x="14" y="34" width="16" height="16" rx="5" fill="#F5F4EF"/>
+  <g transform="rotate(7 42 42)">
+    <rect x="34.5" y="34.5" width="16" height="16" rx="5" fill="#2C3038"/>
+    <rect x="33.5" y="33.5" width="16" height="16" rx="5" fill="#F0685C"/>
+  </g>
+</svg>
